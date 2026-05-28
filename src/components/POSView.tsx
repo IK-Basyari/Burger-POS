@@ -2,7 +2,8 @@ import { useState, useEffect } from 'react';
 import { Plus, Minus, Trash2, Printer, Search, MoreVertical, ShoppingCart, CheckCircle2, AlertCircle, X, Grid, List, Calendar, Smartphone, RotateCw, Check, Bluetooth, Wifi } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Capacitor } from '@capacitor/core';
-import { CapacitorBluetoothSerial } from 'capacitor-bluetooth-serial';
+import { LidtaCapacitorBlPrinter } from 'lidta-capacitor-bl-printer';
+import html2canvas from 'html2canvas';
 import { Category, MenuItem, CartItem, PaymentMethod, Transaction, StockItem, UserRole } from '../types';
 import { MENU_ITEMS } from '../constants';
 import { cn, formatRupiah } from '../lib/utils';
@@ -70,8 +71,10 @@ export default function POSView({
   const [guideDismessed, setGuideDismessed] = useState(false);
   const [cartBounced, setCartBounced] = useState(false);
 
+  // Resize listener to detect if the user's viewport is mobile/tablet portrait
   useEffect(() => {
     const handleResize = () => {
+      // isPortrait triggers when screen width is narrow (< 850px)
       const isNarrow = window.innerWidth < 850;
       setIsPortrait(isNarrow);
       if (!isNarrow) {
@@ -83,6 +86,7 @@ export default function POSView({
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
+  // Soft cart pill micro-interaction animation trigger
   useEffect(() => {
     if (cart.length > 0) {
       setCartBounced(true);
@@ -94,6 +98,7 @@ export default function POSView({
   const allCategories = Array.from(new Set(['All', ...categories]));
 
   const filteredItems = menuItems.filter(item => {
+    // Only allow items belonging to active/allowed categories
     const isCategoryAllowed = categories.some(catName => 
       catName.trim().toLowerCase() === (item.category || '').trim().toLowerCase()
     );
@@ -106,6 +111,7 @@ export default function POSView({
     return matchesCategory && matchesSearch && isActive;
   });
 
+  // Ensure selectedPayment is still available when payments change
   useEffect(() => {
     if (!payments.includes(selectedPayment) && payments.length > 0) {
       setSelectedPayment(payments[0]);
@@ -174,6 +180,7 @@ export default function POSView({
 
   const processPayment = () => {
     const orderNumber = `ORD-${Math.floor(10000 + Math.random() * 90000)}`;
+    
     const now = new Date();
     let timestamp = now.toLocaleString('sv-SE').replace(' ', 'T');
     
@@ -192,10 +199,13 @@ export default function POSView({
       status: 'COMPLETED'
     };
 
+    // 1. Add to Transactions
     onCheckout(newTransaction);
 
+    // 2. Deduct Inventory (Linked Ingredients logic)
     const newInventory = inventory.map(item => ({ ...item }));
     cart.forEach(item => {
+      // Use ingredients linked in master data if available
       if (item.ingredients && item.ingredients.length > 0) {
         item.ingredients.forEach(ing => {
           const stock = newInventory.find(i => 
@@ -209,7 +219,10 @@ export default function POSView({
           }
         });
       } else {
+        // Fallback to intelligent keyword-based matching for unconfigured / default items
         const itemNameLower = item.name.toLowerCase();
+        
+        // 1. Check if Bun Burger is needed (all Burgers)
         if (item.category === 'Burgers' || itemNameLower.includes('burger')) {
           const bun = newInventory.find(i => i.name.toLowerCase() === 'bun burger');
           if (bun) {
@@ -217,13 +230,18 @@ export default function POSView({
             bun.remaining = Math.max(0, bun.remaining - bunQty);
             bun.used = (bun.used || 0) + bunQty;
           }
+          
+          // 2. Look for patty: Beef Patty or Patty Sapi
           const patty = newInventory.find(i => i.name.toLowerCase() === 'beef patty' || i.name.toLowerCase() === 'patty sapi');
           if (patty) {
+            // "Double" means 2 patties per portion
             const multiplier = itemNameLower.includes('double') ? 2 : 1;
             const pattyQty = item.quantity * multiplier;
             patty.remaining = Math.max(0, patty.remaining - pattyQty);
             patty.used = (patty.used || 0) + pattyQty;
           }
+
+          // 3. Cheese Burger or contains keju/cheese -> Keju Slice
           if (itemNameLower.includes('cheese') || itemNameLower.includes('keju')) {
             const cheese = newInventory.find(i => i.name.toLowerCase() === 'keju slice' || i.name.toLowerCase() === 'keju');
             if (cheese) {
@@ -232,6 +250,8 @@ export default function POSView({
               cheese.used = (cheese.used || 0) + cheeseQty;
             }
           }
+
+          // 4. Tomato Sauce / Saus Tomat
           const sauce = newInventory.find(i => i.name.toLowerCase() === 'saus tomat' || i.name.toLowerCase() === 'saus');
           if (sauce) {
             const sauceQty = item.quantity;
@@ -239,6 +259,8 @@ export default function POSView({
             sauce.used = (sauce.used || 0) + sauceQty;
           }
         }
+
+        // 2. French Fries or contains fries/kentang -> Kentang Beku
         if (itemNameLower.includes('fries') || itemNameLower.includes('kentang')) {
           const fries = newInventory.find(i => i.name.toLowerCase() === 'kentang beku' || i.name.toLowerCase() === 'kentang');
           if (fries) {
@@ -250,6 +272,7 @@ export default function POSView({
       }
     });
     
+    // Update status for modified items
     newInventory.forEach(inv => {
       if (inv.remaining <= 10) inv.status = 'KRITIS';
       else inv.status = 'AMAN';
@@ -264,6 +287,7 @@ export default function POSView({
     setLastCashPaid(isNaN(cashAmt) ? subtotal : cashAmt);
     setLastChange(isNaN(changeAmt) ? 0 : changeAmt);
     
+    // Cache checkout data for the printer & modal
     setCompletedItems([...cart]);
     setLastOrderNumber(orderNumber);
     setLastTimestamp(timestamp);
@@ -278,45 +302,91 @@ export default function POSView({
       return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
     });
 
-    const savedAddress = localStorage.getItem('bt_printer_address');
-    if (savedAddress && Capacitor.isNativePlatform()) {
-      setTimeout(() => {
-        handleBluetoothPrintDirectly(savedAddress);
+    // Auto Bluetooth print with smart auto-detection for RPP02N (case-insensitive) if address is not saved
+    if (Capacitor.isNativePlatform()) {
+      setTimeout(async () => {
+        let savedAddress = localStorage.getItem('bt_printer_address');
+        if (savedAddress) {
+          handleBluetoothPrintDirectly(savedAddress);
+        } else {
+          try {
+            const result = await (LidtaCapacitorBlPrinter as any).getPairedDevices();
+            const list = result.devices || [];
+            // Case-insensitive search match for "rpp02n" or "RPP02N"
+            const matchedDevice = list.find((d: any) => d.name && d.name.toLowerCase().includes('rpp02n'));
+            if (matchedDevice) {
+              localStorage.setItem('bt_printer_address', matchedDevice.address);
+              setSelectedBtDevice(matchedDevice);
+              setPrinterMessage(`Auto-detect: Berhasil menemukan printer "${matchedDevice.name}". Menghubungkan...`);
+              handleBluetoothPrintDirectly(matchedDevice.address);
+            } else {
+              setPrinterMessage("Struk siap dicetak. Silakan sambungkan printer Bluetooth Anda di menu bawah.");
+            }
+          } catch (e: any) {
+            console.error("Gagal mendeteksi nama RPP02N secara otomatis:", e);
+          }
+        }
       }, 850);
     }
   };
 
-  // 1. Scan Bluetooth Printers using standard serial bluetooth plugin
+  // 1. Scan paired Bluetooth devices from native Capacitor with robust web simulation fallback
   const scanPrinters = async () => {
     setIsScanning(true);
     setPrinterMessage(null);
     try {
-      if (CapacPlatform.isNativePlatform()) {
-        const result = await CapacitorBluetoothSerial.listPairedDevices();
+      if (Capacitor.isNativePlatform()) {
+        const result = await (LidtaCapacitorBlPrinter as any).getPairedDevices();
         const list = result.devices || [];
         setPairedDevices(list);
         
+        // Auto-match RPP02N printer case-insensitive or previously saved address
         const savedAddress = localStorage.getItem('bt_printer_address');
+        let found = null;
         if (savedAddress) {
-          const found = list.find((d: any) => d.address === savedAddress);
-          if (found) setSelectedBtDevice(found);
+          found = list.find((d: any) => d.address === savedAddress);
         }
+        
+        // Prioritize case-insensitive "rpp02n" automatic selection if found in the list
+        if (!found) {
+          found = list.find((d: any) => d.name && d.name.toLowerCase().includes('rpp02n'));
+          if (found) {
+            localStorage.setItem('bt_printer_address', found.address);
+            setPrinterMessage(`Printer "${found.name}" (RPP02N) terdeteksi otomatis dan disimpan!`);
+          }
+        }
+        
+        if (found) {
+          setSelectedBtDevice(found);
+        }
+
         if (list.length === 0) {
-          setPrinterMessage("Tidak ada printer Bluetooth terpasang. Harap pair printer di pengaturan Bluetooth HP.");
+          setPrinterMessage("Tidak ada printer Bluetooth terpasang (paired) di perangkat ini. Harap pasangkan di pengaturan sistem Bluetooth Android.");
         }
       } else {
+        // High-fidelity web browser device scanner simulation
         setPrinterMessage("Menjalankan simulasi Bluetooth di lingkungan Web...");
-        await new Promise((resolve) => setTimeout(resolve, 800));
+        await new Promise((resolve) => setTimeout(resolve, 1000));
+        
         const mockList = [
-          { name: "RPP02N (Virtual)", address: "00:11:22:33:44:55" },
-          { name: "Thermal Printer 58mm (Virtual)", address: "88:0F:10:22:A3:4B" }
+          { name: "RPP02N (Virtual Thermal Printer)", address: "00:11:22:33:44:55" },
+          { name: "MOCK-Zjiang-Receipt-POS (Virtual)", address: "88:0F:10:22:A3:4B" }
         ];
         setPairedDevices(mockList);
+
+        // Match with saved address or RPP02N automatically
         const savedAddress = localStorage.getItem('bt_printer_address');
+        let found = null;
         if (savedAddress) {
-          const found = mockList.find((d: any) => d.address === savedAddress);
-          if (found) setSelectedBtDevice(found);
+          found = mockList.find((d: any) => d.address === savedAddress);
         }
+        if (!found) {
+          found = mockList.find((d: any) => d.name && d.name.toLowerCase().includes('rpp02n'));
+        }
+        if (found) {
+          setSelectedBtDevice(found);
+        }
+        setPrinterMessage("Simulasi: Berhasil mendeteksi 2 perangkat Bluetooth virtual. Silakan pilih salah satu!");
       }
     } catch (err: any) {
       console.error("Gagal memindai printer bluetooth:", err);
@@ -326,86 +396,181 @@ export default function POSView({
     }
   };
 
+  // 2. Select a printer device on the list
   const selectPrinterDevice = (device: any) => {
     setSelectedBtDevice(device);
     localStorage.setItem('bt_printer_address', device.address);
-    setPrinterMessage(`Printer "${device.name || 'Thermal'}" disimpan!`);
+    setPrinterMessage(`Printer "${device.name || 'Thermal'}" berhasil disimpan & dipilih!`);
   };
 
-  // 2. ESC/POS Universal Text Stream Generator for 58mm (32 characters per line)
+  // 3. Bluetooth Print directly with native plain-text / ESC/POS & web simulation support
   const handleBluetoothPrintDirectly = async (address: string) => {
     setIsPrinting(true);
     setPrinterMessage(null);
     try {
-      // Create clean text-based receipt format suited for 58mm thermal rolls
-      const cleanBusinessName = businessName.toUpperCase().substring(0, 32);
-      const formattedDate = lastTimestamp 
-        ? new Date(lastTimestamp).toLocaleString('id-ID', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) 
-        : new Date().toLocaleTimeString();
+      // 1. Generate standard formatted 32-character monospace plain text receipt
+      const generatePlainTextReceiptStr = () => {
+        const width = 32;
+        const lines: string[] = [];
 
-      let receiptText = "";
-      receiptText += "\x1b\x61\x01"; // Center align
-      receiptText += `${cleanBusinessName}\n`;
-      receiptText += "BURGER QUEEN MALANG\n";
-      receiptText += "--------------------------------\n"; // 32 characters
-      receiptText += "\x1b\x61\x00"; // Left align
-      receiptText += `No. Order: ${lastOrderNumber}\n`;
-      receiptText += `Waktu    : ${formattedDate}\n`;
-      receiptText += `Kasir    : ${cashierName.substring(0, 20)}\n`;
-      receiptText += `Metode   : ${lastPaymentMethod}\n`;
-      receiptText += "--------------------------------\n";
+        const centerText = (text: string) => {
+          const trimmed = (text || "").trim();
+          if (trimmed.length >= width) return trimmed.substring(0, width);
+          const leftPad = Math.floor((width - trimmed.length) / 2);
+          return " ".repeat(leftPad) + trimmed;
+        };
 
-      completedItems.forEach(item => {
-        // Line 1: Item Name
-        receiptText += `${item.name.substring(0, 32)}\n`;
-        // Line 2: Qty x Price and total price aligned right
-        const qtyPriceStr = `  ${item.quantity} x ${formatRupiah(item.price).replace(/\s/g, '')}`;
-        const totalItemPriceStr = formatRupiah(item.price * item.quantity).replace(/\s/g, '');
-        const spacesCount = 32 - qtyPriceStr.length - totalItemPriceStr.length;
-        const spaces = spacesCount > 0 ? " ".repeat(spacesCount) : " ";
-        receiptText += `${qtyPriceStr}${spaces}${totalItemPriceStr}\n`;
-      });
+        const justifyText = (left: string, right: string) => {
+          const leftText = (left || "").trim();
+          const rightText = (right || "").trim();
+          const totalLen = leftText.length + rightText.length;
+          if (totalLen >= width) {
+            const allowedLeft = width - rightText.length - 1;
+            const truncatedLeft = leftText.substring(0, allowedLeft);
+            const spaceCount = width - (truncatedLeft.length + rightText.length);
+            return truncatedLeft + " ".repeat(spaceCount) + rightText;
+          }
+          const spaceCount = width - totalLen;
+          return leftText + " ".repeat(spaceCount) + rightText;
+        };
 
-      receiptText += "--------------------------------\n";
-      
-      // Subtotal
-      const subTotalLabel = "Subtotal:";
-      const subTotalVal = formatRupiah(lastTotal).replace(/\s/g, '');
-      receiptText += `${subTotalLabel}${" ".repeat(32 - subTotalLabel.length - subTotalVal.length)}${subTotalVal}\n`;
-      
-      // Total Bill
-      const totalLabel = "TOTAL BILL:";
-      const totalVal = formatRupiah(lastTotal).replace(/\s/g, '');
-      receiptText += `${totalLabel}${" ".repeat(32 - totalLabel.length - totalVal.length)}${totalVal}\n`;
-      
-      // Paid
-      const paidLabel = `Bayar (${lastPaymentMethod}):`;
-      const paidVal = formatRupiah(lastCashPaid).replace(/\s/g, '');
-      receiptText += `${paidLabel}${" ".repeat(32 - paidLabel.length - paidVal.length)}${paidVal}\n`;
-      
-      // Change
-      const changeLabel = "Kembalian:";
-      const changeVal = formatRupiah(lastChange).replace(/\s/g, '');
-      receiptText += `${changeLabel}${" ".repeat(32 - changeLabel.length - changeVal.length)}${changeVal}\n`;
+        const formatMoney = (val: number) => {
+          return `Rp${val.toLocaleString("id-ID")}`.replace(/\s/g, "");
+        };
 
-      receiptText += "--------------------------------\n";
-      receiptText += "\x1b\x61\x01"; // Center align
-      receiptText += "TERIMA KASIH ATAS KUNJUNGANNYA\n";
-      receiptText += "BURGER QUEEN POS MALANG\n";
-      receiptText += "\n\n\n\n"; // 4 Line feeds to push the receipt paper out past the tear bar
+        // Header Title Page
+        lines.push(centerText(businessName || "Burger Queen"));
+        lines.push(centerText("BURGERPOS INDONESIA"));
+        lines.push("--------------------------------");
+
+        // Transaction Info Meta
+        lines.push(justifyText("No. Order:", String(lastOrderNumber || "")));
+        const d = lastTimestamp ? new Date(lastTimestamp) : new Date();
+        const dateStr = d.toLocaleString("id-ID", {
+          day: "2-digit",
+          month: "2-digit",
+          hour: "2-digit",
+          minute: "2-digit"
+        }).replace(/\./g, ":");
+        lines.push(justifyText("Waktu:", dateStr));
+        lines.push(justifyText("Kasir:", String(cashierName || "Kasir")));
+        lines.push(justifyText("Metode:", String(lastPaymentMethod || "CASH")));
+        lines.push("================================");
+
+        // Render Transaction list of items
+        if (completedItems && completedItems.length > 0) {
+          completedItems.forEach((item: any) => {
+            lines.push(item.name.substring(0, width).toUpperCase());
+            const qtyPriceStr = `${item.quantity} x ${formatMoney(item.price)}`;
+            const subTotalStr = formatMoney(item.price * item.quantity);
+            lines.push(justifyText(`  ${qtyPriceStr}`, subTotalStr));
+          });
+        }
+
+        lines.push("--------------------------------");
+
+        // Receipt totals section
+        lines.push(justifyText("Subtotal", formatMoney(lastTotal || 0)));
+        lines.push(justifyText("TOTAL BILL", formatMoney(lastTotal || 0)));
+        lines.push("--------------------------------");
+        lines.push(justifyText(`Bayar (${lastPaymentMethod})`, formatMoney(lastCashPaid || 0)));
+        lines.push(justifyText("Kembalian", formatMoney(lastChange || 0)));
+        lines.push("================================");
+
+        // Friendly footer block
+        lines.push(centerText("TERIMA KASIH ATAS KUNJUNGANNYA"));
+        lines.push(centerText("DIKEMBANGKAN OLEH BURGERPOS"));
+        lines.push("");
+        lines.push(""); // Ganti baris kosong di akhir untuk menghindari tarikan kertas terpotong
+
+        return lines.join("\n");
+      };
+
+      // 2. Generate offscreen Courier monospace canvas for printBase64 fallback
+      // (Bypasses color parsing oklch & html2canvas completely to prevent WebView crashes!)
+      const generateMonospaceBase64Image = (rawText: string) => {
+        const lines = rawText.split("\n");
+        const canvas = document.createElement("canvas");
+        const ctx = canvas.getContext("2d");
+        if (!ctx) return null;
+
+        const canvasWidth = 384; // standard 58mm POS thermal pixel width
+        const lineHeight = 24;
+        const padding = 8;
+        const fontHeight = 18;
+
+        canvas.width = canvasWidth;
+        canvas.height = lines.length * lineHeight + padding * 2;
+
+        // Clean white solid background
+        ctx.fillStyle = "#ffffff";
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+        // Crisp solid black typography
+        ctx.fillStyle = "#000000";
+        ctx.textBaseline = "top";
+        ctx.font = `bold ${fontHeight}px "Courier New", Courier, monospace`;
+
+        lines.forEach((line, index) => {
+          ctx.fillText(line, padding, padding + index * lineHeight);
+        });
+
+        return canvas.toDataURL("image/png");
+      };
+
+      const receiptPlainText = generatePlainTextReceiptStr();
 
       if (Capacitor.isNativePlatform()) {
-        setPrinterMessage("Menghubungkan printer...");
-        await CapacitorBluetoothSerial.connect({ address });
+        setPrinterMessage("Menyambungkan printer Bluetooth...");
+        const connResult = await LidtaCapacitorBlPrinter.connect({ address });
+        if (!connResult || !connResult.value) {
+          throw new Error("Gagal menyambungkan ke printer. Pastikan Bluetooth dan printer aktif.");
+        }
+
+        setPrinterMessage("Mengirim data struk...");
         
-        setPrinterMessage("Mengirim data struk hpp...");
-        await CapacitorBluetoothSerial.write({ value: receiptText });
-        
-        await CapacitorBluetoothSerial.disconnect();
-        setPrinterMessage("✅ Sukses! Struk berhasil dicetak.");
+        let printedNatively = false;
+        // Attempt Native ASCII Plain-Text Printing first (extremely fast and saves printer memory)
+        try {
+          if (typeof (LidtaCapacitorBlPrinter as any).printPlainText === "function") {
+            setPrinterMessage("Mencetak dengan teks universal (ESC/POS)...");
+            await (LidtaCapacitorBlPrinter as any).printPlainText({ text: receiptPlainText });
+            printedNatively = true;
+          }
+        } catch (nativeErr) {
+          console.warn("Gagal menggunakan metode teks langsung (bukan murni error, mencoba raster fallback):", nativeErr);
+        }
+
+        // If native plain-text method is undefined or failed, fallback to our ultra-reliable Webview-safe Monospace Canvas
+        if (!printedNatively) {
+          setPrinterMessage("Menyiapkan kertas struk grafis...");
+          const bitmapBase64 = generateMonospaceBase64Image(receiptPlainText);
+          if (bitmapBase64) {
+            await LidtaCapacitorBlPrinter.printBase64({
+              msg: bitmapBase64,
+              align: 1 // Center align
+            });
+          } else {
+            throw new Error("Gagal merubah struk belanja ke format bitmap.");
+          }
+        }
+
+        // Disconnect
+        await LidtaCapacitorBlPrinter.disconnect();
+        setPrinterMessage("Struk berhasil dicetak ke printer Bluetooth thermal!");
       } else {
-        console.log("Simulasi Struk 58mm:\n", receiptText);
-        setPrinterMessage("✅ [Simulasi Web] Data teks dikirim ke konsol pengembang.");
+        // High fidelity web simulation playground
+        setPrinterMessage(`[Simulasi Web] Menyambungkan printer thermal (${address})...`);
+        await new Promise((resolve) => setTimeout(resolve, 600));
+
+        console.log("=== PLAIN TEXT RECEIPT (32 COLUMNS) ===");
+        console.log(receiptPlainText);
+        console.log("=======================================");
+
+        setPrinterMessage("[Simulasi Web] Mencetak struk belanja teks...");
+        await new Promise((resolve) => setTimeout(resolve, 800));
+
+        setPrinterMessage("✅ [Simulasi] Teks struk berhasil dicetak (Lihat log pesan di console developer)!");
       }
     } catch (err: any) {
       console.error("Kesalahan cetak Bluetooth:", err);
@@ -415,6 +580,7 @@ export default function POSView({
     }
   };
 
+  // 4. Web browser print fallback (using system print drawer with 58mm POS thermal dimensions)
   const printReceiptViaWeb = () => {
     const receiptElement = document.getElementById('thermal-receipt-container');
     if (!receiptElement) {
@@ -422,6 +588,7 @@ export default function POSView({
       return;
     }
 
+    // Create printable iframe for frictionless user experience
     const iframe = document.createElement('iframe');
     iframe.style.position = 'absolute';
     iframe.style.width = '0px';
@@ -438,7 +605,10 @@ export default function POSView({
         <head>
           <title>Struk Belanja #${lastOrderNumber || ''}</title>
           <style>
-            @page { margin: 0; size: auto; }
+            @page {
+              margin: 0;
+              size: auto;
+            }
             body {
               font-family: 'Courier New', Courier, monospace;
               font-size: 11px;
@@ -446,10 +616,14 @@ export default function POSView({
               background: #fff;
               margin: 0;
               padding: 8px;
-              width: 58mm;
+              width: 58mm; /* Configured thermal tape width */
               box-sizing: border-box;
             }
-            @media print { body { width: 58mm; } }
+            @media print {
+              body {
+                width: 58mm;
+              }
+            }
             .text-center { text-align: center; }
             .text-right { text-align: right; }
             .bold { font-weight: bold; }
@@ -464,7 +638,7 @@ export default function POSView({
         </head>
         <body onload="setTimeout(function(){ window.print(); }, 200);">
           <div class="text-center bold uppercase" style="font-size: 12px; font-family: monospace;">${businessName}</div>
-          <div class="text-center" style="font-size: 9px; margin-bottom: 4px; font-family: monospace;">BURGER QUEEN MALANG</div>
+          <div class="text-center" style="font-size: 9px; margin-bottom: 4px; font-family: monospace;">BURGERPOS INDONESIA</div>
           <div class="line"></div>
           <div style="font-size: 9px; font-family: monospace;">
             <div>No. Order: ${lastOrderNumber}</div>
@@ -506,18 +680,22 @@ export default function POSView({
           <div class="line"></div>
           <div class="text-center" style="font-size: 8px; margin-top: 8px; opacity: 0.8; font-family: monospace;">
             TERIMA KASIH ATAS KUNJUNGANNYA<br/>
-            BURGER QUEEN POS MALANG
+            DIKEMBANGKAN OLEH BURGERPOS
           </div>
         </body>
       </html>
     `);
     iframeDoc.close();
+
     setPrinterMessage("Mengirim data cetak struk...");
+    
+    // Smooth container disposal
     setTimeout(() => {
       document.body.removeChild(iframe);
     }, 2500);
   };
 
+  // Automated Scanning on modal pop
   useEffect(() => {
     if (showSuccessModal && Capacitor.isNativePlatform()) {
       scanPrinters();
@@ -544,8 +722,9 @@ export default function POSView({
               <h1 className="text-sm font-black text-soft-cream tracking-tight uppercase">KASIR</h1>
             </div>
 
-            {/* Categories & View Mode Toggles */}
+            {/* Categories & View Mode Toggles grouped together */}
             <div className="flex items-center gap-2.5 ml-auto w-full md:w-auto justify-between md:justify-end">
+              {/* Categories list */}
               <div className="flex items-center gap-1.5 overflow-x-auto py-1 no-scrollbar max-w-[220px] xs:max-w-[280px] sm:max-w-md md:max-w-lg lg:max-w-xl xl:max-w-2xl">
                 {allCategories.map((cat, idx) => (
                   <button
@@ -595,7 +774,7 @@ export default function POSView({
           </div>
         </header>
 
-        {/* Mobile Portrait Banner */}
+        {/* Interactive Mobile Portrait Banner */}
         {isPortrait && !guideDismessed && (
           <motion.div 
             initial={{ opacity: 0, y: -20 }}
@@ -707,7 +886,7 @@ export default function POSView({
         <div className="px-3 py-2.5 border-b border-soft-cream/10 flex items-center justify-between">
           <div>
             <h2 className="text-sm font-bold text-soft-cream">Keranjang Belanja</h2>
-            <p className="text-[9px] text-soft-cream/40 mt-0.5 uppercase tracking-wider">Order Aktif</p>
+            <p className="text-[9px] text-soft-cream/40 mt-0.5 uppercase tracking-wider">Order #12345</p>
           </div>
           {cart.length > 0 && (
             <button
@@ -885,7 +1064,7 @@ export default function POSView({
           </button>
         </div>
       </aside>
-    )}
+      )}
 
       {/* Payment Confirmation Modal */}
       <AnimatePresence>
@@ -920,6 +1099,7 @@ export default function POSView({
               <p className="text-charcoal/60 text-xs mb-4">Metode: <span className="font-bold text-amber">{selectedPayment}</span> • Total Tagihan: <span className="font-bold text-charcoal">{formatRupiah(subtotal)}</span></p>
               
               <div className="space-y-4 mb-4">
+                {/* Uang Diterima */}
                 <div>
                   <label className="block text-[10px] font-black text-charcoal/50 uppercase tracking-widest mb-1.5">Uang Diterima (Rupiah)</label>
                   <div className="relative">
@@ -934,6 +1114,7 @@ export default function POSView({
                   </div>
                 </div>
 
+                {/* Shortcuts */}
                 <div>
                   <label className="block text-[9px] font-black text-charcoal/40 uppercase tracking-wider mb-1.5">Pilihan Cepat (Shortcut Uang)</label>
                   <div className="flex flex-wrap gap-1.5">
@@ -963,6 +1144,7 @@ export default function POSView({
                     <span className="font-bold text-charcoal">{formatRupiah(subtotal)}</span>
                   </div>
                   
+                  {/* Calculate change / return */}
                   {(() => {
                     const cashAmtVal = cashPaid === '' ? subtotal : parseFloat(cashPaid);
                     const change = cashAmtVal - subtotal;
@@ -992,6 +1174,7 @@ export default function POSView({
                 </div>
               </div>
 
+              {/* Action Buttons */}
               <div className="grid grid-cols-2 gap-3">
                 <button 
                   onClick={() => setShowConfirmModal(false)}
@@ -1046,14 +1229,14 @@ export default function POSView({
               <h3 className="text-lg font-black text-charcoal leading-none">Pembayaran Berhasil!</h3>
               <p className="text-charcoal/40 text-[9px] mb-4 uppercase tracking-wider font-extrabold mt-0.5">Transaksi Telah Selesai</p>
               
-              {/* Authentic Thermal Receipt Preview Mockup */}
+              {/* Authentic Thermal Receipt Mockup */}
               <div 
                 id="thermal-receipt-container" 
                 className="bg-white text-black p-4 rounded-xl font-mono text-left shadow-lg border border-zinc-200 text-[10px] leading-tight select-all w-full flex flex-col mx-auto mb-4 border-t-8 border-t-amber"
               >
                 <div className="text-center font-black text-sm uppercase tracking-wide text-zinc-900 leading-none">{businessName}</div>
                 <div className="text-center text-[8px] text-zinc-400 uppercase tracking-widest font-black mt-1 mb-2">
-                  BURGER QUEEN MALANG
+                  Burger POS Indonesia
                 </div>
                 
                 <div className="border-b border-dashed border-zinc-300 pb-2 mb-2 text-[10px] text-zinc-600 space-y-0.5">
@@ -1107,7 +1290,7 @@ export default function POSView({
                 </div>
                 
                 <div className="border-t border-dashed border-zinc-300 pt-2 text-center text-[7.5px] text-zinc-400 font-bold tracking-wider uppercase mt-1">
-                  TERIMA KASIH ATAS KUNJUNGANNYA<br/>BURGER QUEEN POS MALANG
+                  TERIMA KASIH ATAS KUNJUNGANNYA<br/>BURGERPOS INDONESIA
                 </div>
               </div>
 
@@ -1274,7 +1457,7 @@ export default function POSView({
               transition={{ type: 'spring', damping: 25, stiffness: 220 }}
               className="relative bg-charcoal border-t border-soft-cream/10 rounded-t-[32px] max-h-[85vh] w-full max-w-lg flex flex-col z-10 shadow-2xl overflow-hidden"
             >
-              {/* Top Handle */}
+              {/* Top Handle / Drag indicator */}
               <div className="flex justify-center py-3">
                 <div className="w-12 h-1.5 bg-soft-cream/15 rounded-full" />
               </div>
@@ -1358,6 +1541,7 @@ export default function POSView({
 
               {/* Drawer Footer controls */}
               <div className="p-5 bg-soft-cream/5 border-t border-soft-cream/10 space-y-4">
+                {/* Retroactive Date Picker for Admin/Manager inside drawer list */}
                 {role !== 'CASHIER' && (
                   <div className="bg-charcoal/20 border border-soft-cream/5 rounded-xl p-3 flex flex-col gap-2">
                     <div className="flex items-center justify-between">
@@ -1475,6 +1659,7 @@ export default function POSView({
               transition={{ type: 'spring', damping: 25, stiffness: 200 }}
               className="relative bg-soft-cream rounded-[32px] p-6 max-w-sm w-full shadow-2xl flex flex-col items-center z-10 border border-charcoal/5"
             >
+              {/* Close Button */}
               <button 
                 onClick={() => setShowRotationGuide(false)}
                 className="absolute top-4 right-4 p-2 bg-charcoal/5 hover:bg-charcoal/10 rounded-full transition"
@@ -1489,6 +1674,7 @@ export default function POSView({
               <h3 className="text-xl font-black text-charcoal text-center">Rotasi Layar</h3>
               <p className="text-charcoal/40 text-[9px] uppercase tracking-wider font-extrabold text-center mb-5">Panduan Kenyamanan Kasir</p>
 
+              {/* Rotating Smartphone CSS Animation Mockup */}
               <div className="w-full bg-charcoal/5 border border-charcoal/10 rounded-2xl p-6 flex flex-col items-center justify-center mb-5">
                 <div className="h-28 flex items-center justify-center">
                   <motion.div
@@ -1502,11 +1688,16 @@ export default function POSView({
                     }}
                     className="w-11 h-20 bg-charcoal rounded-xl border-2 border-charcoal/40 relative shadow-xl flex flex-col justify-between p-1.5 focus:outline-none"
                   >
+                    {/* Screen reflection/notch */}
                     <div className="w-5 h-1 bg-charcoal/60 rounded-full mx-auto" />
+                    
+                    {/* Inner mock content */}
                     <div className="flex-1 bg-charcoal/90 rounded-md border border-amber/20 overflow-hidden flex flex-col justify-center items-center gap-1">
                       <div className="w-6 h-1 bg-amber/50 rounded" />
                       <div className="w-5 h-1 bg-amber/30 rounded" />
                     </div>
+
+                    {/* Home button indicator */}
                     <div className="w-3 h-0.5 bg-charcoal/40 rounded-full mx-auto" />
                   </motion.div>
                 </div>
@@ -1515,8 +1706,11 @@ export default function POSView({
                 </p>
               </div>
 
+              {/* Interactive Checklist steps */}
               <div className="w-full space-y-2.5 mb-6 text-left">
                 <p className="text-[10px] font-black uppercase text-charcoal/40 tracking-wider">Langkah Konfigurasi HP:</p>
+                
+                {/* Apple */}
                 <div className="flex items-start gap-3 p-3.5 bg-charcoal/5 border border-charcoal/10 rounded-xl hover:bg-charcoal/10 transition">
                   <span className="p-1 bg-amber/20 rounded-lg text-charcoal text-xs font-black select-none leading-none shrink-0 mt-0.5">iOS</span>
                   <div className="text-xs">
@@ -1525,6 +1719,7 @@ export default function POSView({
                   </div>
                 </div>
 
+                {/* Android */}
                 <div className="flex items-start gap-3 p-3.5 bg-charcoal/5 border border-charcoal/10 rounded-xl hover:bg-charcoal/10 transition">
                   <span className="p-1 bg-amber/20 rounded-lg text-charcoal text-xs font-black select-none leading-none shrink-0 mt-0.5">And</span>
                   <div className="text-xs">
@@ -1534,6 +1729,7 @@ export default function POSView({
                 </div>
               </div>
 
+              {/* Dismiss Button */}
               <button 
                 onClick={() => setShowRotationGuide(false)}
                 className="w-full py-3 bg-charcoal text-soft-cream hover:bg-charcoal/80 rounded-xl font-extrabold text-xs transition"
