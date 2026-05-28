@@ -1,0 +1,128 @@
+{
+  "entities": {
+    "MenuItem": {
+      "title": "Menu Item",
+      "description": "Products available for sale in the POS",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "price": { "type": "number" },
+        "category": { "type": "string" },
+        "image": { "type": "string" },
+        "isActive": { "type": "boolean" },
+        "ingredients": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "stockItemId": { "type": "string" },
+              "quantity": { "type": "number" }
+            }
+          }
+        }
+      },
+      "required": ["name", "price", "category"]
+    },
+    "Category": {
+      "title": "Category",
+      "description": "Product categories",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "isActive": { "type": "boolean" }
+      },
+      "required": ["name"]
+    },
+    "PaymentMethod": {
+      "title": "Payment Method",
+      "description": "Available payment methods",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "isActive": { "type": "boolean" }
+      },
+      "required": ["name"]
+    },
+    "Transaction": {
+      "title": "Transaction",
+      "description": "Sales records",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "orderNumber": { "type": "string" },
+        "timestamp": { "type": "string", "format": "date-time" },
+        "total": { "type": "number" },
+        "paymentMethod": { "type": "string" },
+        "status": { "type": "string", "enum": ["COMPLETED", "VOID"] },
+        "items": { "type": "array" }
+      },
+      "required": ["orderNumber", "total", "paymentMethod", "status"]
+    },
+    "StockItem": {
+      "title": "Stock Item",
+      "description": "Inventory ingredients",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "used": { "type": "number" },
+        "remaining": { "type": "number" },
+        "status": { "type": "string", "enum": ["AMAN", "KRITIS"] },
+        "isActive": { "type": "boolean" }
+      },
+      "required": ["name", "remaining", "status"]
+    },
+    "AppUser": {
+      "title": "Application User",
+      "description": "System users with roles",
+      "type": "object",
+      "properties": {
+        "username": { "type": "string" },
+        "password": { "type": "string" },
+        "displayName": { "type": "string" },
+        "role": { "type": "string", "enum": ["ADMIN", "CASHIER"] }
+      },
+      "required": ["username", "password", "role"]
+    },
+    "BusinessSettings": {
+      "title": "Business Settings",
+      "description": "Store business branding name and logo",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "logo": { "type": "string" }
+      },
+      "required": ["name", "logo"]
+    }
+  },
+  "firestore": {
+    "menuItems": {
+      "schema": "MenuItem",
+      "description": "Store all menu products"
+    },
+    "categories": {
+      "schema": "Category",
+      "description": "Store all product categories"
+    },
+    "paymentMethods": {
+      "schema": "PaymentMethod",
+      "description": "Store available payment methods"
+    },
+    "transactions": {
+      "schema": "Transaction",
+      "description": "Store all sales transactions"
+    },
+    "inventory": {
+      "schema": "StockItem",
+      "description": "Store all inventory items"
+    },
+    "users": {
+      "schema": "AppUser",
+      "description": "Store all application users"
+    },
+    "businessSettings": {
+      "schema": "BusinessSettings",
+      "description": "Store business branding metadata"
+    }
+  }
+}

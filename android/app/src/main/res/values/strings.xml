@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">FCB POS</string>
+    <string name="title_activity_main">FCB POS</string>
+    <string name="package_name">com.fcbpos.pos</string>
+    <string name="custom_url_scheme">com.fcbpos.pos</string>
+</resources>

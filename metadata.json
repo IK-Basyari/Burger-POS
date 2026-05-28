@@ -1,0 +1,8 @@
+{
+  "name": "Burger POS System",
+  "description": "A design-focused, web-based POS system for burger F&B operations, featuring real-time inventory and analytics.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
