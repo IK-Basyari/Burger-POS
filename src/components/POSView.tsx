@@ -2,8 +2,7 @@ import { useState, useEffect } from 'react';
 import { Plus, Minus, Trash2, Printer, Search, MoreVertical, ShoppingCart, CheckCircle2, AlertCircle, X, Grid, List, Calendar, Smartphone, RotateCw, Check, Bluetooth, Wifi } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Capacitor } from '@capacitor/core';
-import { LidtaCapacitorBlPrinter } from 'lidta-capacitor-bl-printer';
-import html2canvas from 'html2canvas';
+import { BluetoothSerial as CapacitorBluetoothSerial } from 'capacitor-bluetooth-serial';
 import { Category, MenuItem, CartItem, PaymentMethod, Transaction, StockItem, UserRole } from '../types';
 import { MENU_ITEMS } from '../constants';
 import { cn, formatRupiah } from '../lib/utils';
@@ -310,7 +309,7 @@ export default function POSView({
           handleBluetoothPrintDirectly(savedAddress);
         } else {
           try {
-            const result = await (LidtaCapacitorBlPrinter as any).getPairedDevices();
+            const result = await (CapacitorBluetoothSerial as any).listPairedDevices();
             const list = result.devices || [];
             // Case-insensitive search match for "rpp02n" or "RPP02N"
             const matchedDevice = list.find((d: any) => d.name && d.name.toLowerCase().includes('rpp02n'));
@@ -336,7 +335,7 @@ export default function POSView({
     setPrinterMessage(null);
     try {
       if (Capacitor.isNativePlatform()) {
-        const result = await (LidtaCapacitorBlPrinter as any).getPairedDevices();
+        const result = await (CapacitorBluetoothSerial as any).listPairedDevices();
         const list = result.devices || [];
         setPairedDevices(list);
         
@@ -522,41 +521,16 @@ export default function POSView({
 
       if (Capacitor.isNativePlatform()) {
         setPrinterMessage("Menyambungkan printer Bluetooth...");
-        const connResult = await LidtaCapacitorBlPrinter.connect({ address });
-        if (!connResult || !connResult.value) {
-          throw new Error("Gagal menyambungkan ke printer. Pastikan Bluetooth dan printer aktif.");
-        }
+        await (CapacitorBluetoothSerial as any).connect({ address });
 
         setPrinterMessage("Mengirim data struk...");
-        
-        let printedNatively = false;
-        // Attempt Native ASCII Plain-Text Printing first (extremely fast and saves printer memory)
-        try {
-          if (typeof (LidtaCapacitorBlPrinter as any).printPlainText === "function") {
-            setPrinterMessage("Mencetak dengan teks universal (ESC/POS)...");
-            await (LidtaCapacitorBlPrinter as any).printPlainText({ text: receiptPlainText });
-            printedNatively = true;
-          }
-        } catch (nativeErr) {
-          console.warn("Gagal menggunakan metode teks langsung (bukan murni error, mencoba raster fallback):", nativeErr);
-        }
+        await (CapacitorBluetoothSerial as any).write({ value: receiptPlainText });
 
-        // If native plain-text method is undefined or failed, fallback to our ultra-reliable Webview-safe Monospace Canvas
-        if (!printedNatively) {
-          setPrinterMessage("Menyiapkan kertas struk grafis...");
-          const bitmapBase64 = generateMonospaceBase64Image(receiptPlainText);
-          if (bitmapBase64) {
-            await LidtaCapacitorBlPrinter.printBase64({
-              msg: bitmapBase64,
-              align: 1 // Center align
-            });
-          } else {
-            throw new Error("Gagal merubah struk belanja ke format bitmap.");
-          }
-        }
+        setPrinterMessage("Menyelesaikan pencetakan...");
+        // Add ESC/POS universal line feed at the end just to be sure
+        await (CapacitorBluetoothSerial as any).write({ value: "\n\n\n\n" });
 
-        // Disconnect
-        await LidtaCapacitorBlPrinter.disconnect();
+        await (CapacitorBluetoothSerial as any).disconnect();
         setPrinterMessage("Struk berhasil dicetak ke printer Bluetooth thermal!");
       } else {
         // High fidelity web simulation playground
