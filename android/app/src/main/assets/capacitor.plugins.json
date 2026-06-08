@@ -1,0 +1,10 @@
+[
+	{
+		"pkg": "capacitor-bluetooth-serial",
+		"classpath": "com.bluetoothserial.plugin.BluetoothSerial"
+	},
+	{
+		"pkg": "lidta-capacitor-bl-printer",
+		"classpath": "com.lidta.plugins.capacitor.LidtaCapacitorBlPrinterPlugin"
+	}
+]

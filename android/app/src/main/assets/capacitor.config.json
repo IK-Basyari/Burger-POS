@@ -1,0 +1,5 @@
+{
+	"appId": "com.burgerpos.app",
+	"appName": "BurgerPOS",
+	"webDir": "dist"
+}
