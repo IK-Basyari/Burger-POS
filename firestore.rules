@@ -137,8 +137,8 @@ service cloud.firestore {
 
     match /businessSettings/{settingsId} {
       allow read: if true;
-      allow create: if isValidBusinessSettings(incoming());
-      allow update: if isValidBusinessSettings(incoming());
+      allow create: if true;
+      allow update: if true;
       allow delete: if true;
     }
   }

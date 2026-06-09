@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Settings, User, Bell, Shield, Smartphone, Globe, Moon, Sun, Save, MoreVertical, Users, Trash2, Plus, UserPlus, Key, Edit2, Printer, Search, Check, Bluetooth } from 'lucide-react';
+import { Settings, User, Bell, Shield, Smartphone, Globe, Moon, Sun, Save, MoreVertical, Users, Trash2, Plus, UserPlus, Key, Edit2, Printer, Search, Check, Bluetooth, Image as ImageIcon, Edit3 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '../lib/utils';
 import { AppUser, UserRole } from '../types';
@@ -377,18 +377,87 @@ export default function SettingsView({
                       />
                     </div>
                     <div className="space-y-2">
-                      <label className="text-xs font-bold text-soft-cream/40 uppercase tracking-widest">Logo Usaha (Inisial atau URL Gambar)</label>
-                      <input 
-                        type="text" 
-                        value={bLogo}
-                        onChange={(e) => {
-                          const val = e.target.value;
-                          setBLogo(val);
-                          onPreviewBusinessSettings?.({ name: bName, logo: val });
-                        }}
-                        placeholder="Masukkan inisial (misal: B) atau URL gambar"
-                        className="w-full bg-soft-cream/5 border border-soft-cream/10 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-amber transition-colors text-soft-cream"
-                      />
+                      <label className="text-xs font-bold text-soft-cream/40 uppercase tracking-widest">Logo Usaha (Foto/Gambar)</label>
+                      <div className="relative">
+                        <input 
+                          type="file" 
+                          accept="image/*"
+                          onChange={(e) => {
+                            const file = e.target.files?.[0];
+                            if (file) {
+                              const reader = new FileReader();
+                              reader.onloadend = () => {
+                                const img = new Image();
+                                img.onload = () => {
+                                  const canvas = document.createElement('canvas');
+                                  const SIZE = 200; // Small size for logo
+                                  let sourceX = 0;
+                                  let sourceY = 0;
+                                  let sourceSize = Math.min(img.width, img.height);
+                                  
+                                  if (img.width > img.height) {
+                                    sourceX = (img.width - sourceSize) / 2;
+                                  } else {
+                                    sourceY = (img.height - sourceSize) / 2;
+                                  }
+                                  
+                                  canvas.width = SIZE;
+                                  canvas.height = SIZE;
+                                  const ctx = canvas.getContext('2d');
+                                  if (ctx) {
+                                    ctx.drawImage(img, sourceX, sourceY, sourceSize, sourceSize, 0, 0, SIZE, SIZE);
+                                    const compressedDataUrl = canvas.toDataURL('image/jpeg', 0.8);
+                                    setBLogo(compressedDataUrl);
+                                    onPreviewBusinessSettings?.({ name: bName, logo: compressedDataUrl });
+                                  } else {
+                                    const rawUrl = reader.result as string;
+                                    setBLogo(rawUrl);
+                                    onPreviewBusinessSettings?.({ name: bName, logo: rawUrl });
+                                  }
+                                };
+                                img.src = reader.result as string;
+                              };
+                              reader.readAsDataURL(file);
+                            }
+                          }}
+                          className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-20"
+                          title="Upload Logo Usaha"
+                        />
+                        <div className="w-full bg-soft-cream/5 border border-soft-cream/10 border-dashed rounded-xl px-4 py-8 text-sm text-soft-cream flex flex-col items-center justify-center gap-3 hover:bg-soft-cream/10 transition-colors relative overflow-hidden group h-32">
+                          {bLogo && bLogo.startsWith('data:image') ? (
+                            <>
+                              <img src={bLogo} alt="Preview Logo" className="absolute inset-0 w-full h-full object-contain bg-black/20 opacity-80 group-hover:opacity-40 transition-opacity" />
+                              <div className="relative z-10 hidden group-hover:flex items-center gap-1.5 bg-black/50 px-3 py-1.5 rounded-full shadow-sm backdrop-blur-sm border border-soft-cream/10">
+                                <Edit3 className="w-4 h-4 text-soft-cream/80" />
+                                <span className="text-soft-cream/90 font-bold text-xs">Ganti Logo</span>
+                              </div>
+                            </>
+                          ) : bLogo && bLogo.startsWith('http') ? (
+                             <>
+                              <img src={bLogo} alt="Preview Logo URL" className="absolute inset-0 w-full h-full object-contain bg-black/20 opacity-80 group-hover:opacity-40 transition-opacity" />
+                              <div className="relative z-10 hidden group-hover:flex items-center gap-1.5 bg-black/50 px-3 py-1.5 rounded-full shadow-sm backdrop-blur-sm border border-soft-cream/10">
+                                <Edit3 className="w-4 h-4 text-soft-cream/80" />
+                                <span className="text-soft-cream/90 font-bold text-xs">Ganti Logo</span>
+                              </div>
+                             </>
+                          ) : bLogo && bLogo.length === 1 ? (
+                             <>
+                                <div className="absolute inset-0 w-full h-full opacity-80 group-hover:opacity-40 transition-opacity bg-amber flex items-center justify-center text-charcoal font-black text-5xl">
+                                  {bLogo.toUpperCase()}
+                                </div>
+                                <div className="relative z-10 hidden group-hover:flex items-center gap-1.5 bg-black/50 px-3 py-1.5 rounded-full shadow-sm backdrop-blur-sm border border-soft-cream/10">
+                                  <Edit3 className="w-4 h-4 text-soft-cream/80" />
+                                  <span className="text-soft-cream/90 font-bold text-xs">Ganti Jadi Foto</span>
+                                </div>
+                             </>
+                          ) : (
+                            <>
+                              <ImageIcon className="w-8 h-8 text-soft-cream/30" />
+                              <span className="text-soft-cream/60 font-semibold text-xs">Ketuk untuk pilih foto logo</span>
+                            </>
+                          )}
+                        </div>
+                      </div>
                     </div>
                     
                     <div className="col-span-1 md:col-span-2 space-y-2">
