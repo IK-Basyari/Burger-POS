@@ -1,16 +1,8 @@
-import { useState, useEffect } from 'react';
-import { Plus, Minus, Trash2, Printer, Search, MoreVertical, ShoppingCart, CheckCircle2, AlertCircle, X, Grid, List, Calendar, Smartphone, RotateCw, Check, Bluetooth, Wifi } from 'lucide-react';
+import { useState, useEffect, useMemo } from 'react';
+import { Plus, Minus, Trash2, Printer, Search, MoreVertical, ShoppingCart, CheckCircle2, AlertCircle, X, Grid, List, Calendar, Smartphone, RotateCw, Check, Bluetooth, Wifi, Flame } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Capacitor } from '@capacitor/core';
-// Bluetooth printing package was removed to fix build error.
-// import { BluetoothSerial as CapacitorBluetoothSerial } from 'capacitor-bluetooth-serial';
-// Provide a mock object so the rest of the code doesn't crash:
-const CapacitorBluetoothSerial = {
-  listPairedDevices: async () => ({ devices: [] }),
-  connect: async () => {},
-  write: async () => {},
-  disconnect: async () => {} 
-};
+import { BluetoothThermalPrinter } from '../lib/bluetooth';
 import { Category, MenuItem, CartItem, PaymentMethod, Transaction, StockItem, UserRole } from '../types';
 import { MENU_ITEMS } from '../constants';
 import { cn, formatRupiah } from '../lib/utils';
@@ -23,6 +15,7 @@ interface POSViewProps {
   onCheckout: (transaction: Transaction) => void;
   inventory: StockItem[];
   onUpdateInventory: (inventory: StockItem[]) => void;
+  transactions?: Transaction[];
   role?: UserRole;
   businessName?: string;
   businessLogo?: string;
@@ -37,6 +30,7 @@ export default function POSView({
   onCheckout,
   inventory,
   onUpdateInventory,
+  transactions = [],
   role,
   businessName = 'BurgerPOS',
   businessLogo = 'B',
@@ -125,9 +119,83 @@ export default function POSView({
     }
   }, [payments, selectedPayment]);
 
+  const getAvailableStock = (item: MenuItem): number | null => {
+    if (item.ingredients && item.ingredients.length > 0) {
+      let minStock = Infinity;
+      item.ingredients.forEach(ing => {
+        const stock = inventory.find(i => 
+          i.name.toLowerCase() === ing.stockItemId.toLowerCase() || 
+          (i.id && i.id.toLowerCase() === ing.stockItemId.toLowerCase())
+        );
+        if (stock) {
+          minStock = Math.min(minStock, Math.floor(stock.remaining / ing.quantity));
+        } else {
+          // If the required ingredient doesn't exist in stock, max possible is 0
+          minStock = 0;
+        }
+      });
+      return minStock === Infinity ? null : minStock;
+    } else {
+      const itemNameLower = item.name.toLowerCase();
+      let minStock = Infinity;
+      let matchedAny = false;
+
+      if (item.category === 'Burgers' || itemNameLower.includes('burger')) {
+        matchedAny = true;
+        const bun = inventory.find(i => i.name.toLowerCase() === 'bun burger');
+        if (bun) { minStock = Math.min(minStock, bun.remaining); }
+        else { minStock = 0; }
+        
+        const patty = inventory.find(i => i.name.toLowerCase() === 'beef patty' || i.name.toLowerCase() === 'patty sapi');
+        if (patty) {
+          const multiplier = itemNameLower.includes('double') ? 2 : 1;
+          minStock = Math.min(minStock, Math.floor(patty.remaining / multiplier));
+        } else { minStock = 0; }
+
+        if (itemNameLower.includes('cheese') || itemNameLower.includes('keju')) {
+          const cheese = inventory.find(i => i.name.toLowerCase() === 'keju slice' || i.name.toLowerCase() === 'keju');
+          if (cheese) { minStock = Math.min(minStock, cheese.remaining); }
+          else { minStock = 0; }
+        }
+
+        const sauce = inventory.find(i => i.name.toLowerCase() === 'saus tomat' || i.name.toLowerCase() === 'saus');
+        if (sauce) { minStock = Math.min(minStock, sauce.remaining); }
+      }
+
+      if (itemNameLower.includes('fries') || itemNameLower.includes('kentang')) {
+        matchedAny = true;
+        const fries = inventory.find(i => i.name.toLowerCase() === 'kentang beku' || i.name.toLowerCase() === 'kentang');
+        if (fries) { minStock = Math.min(minStock, fries.remaining); }
+        else { minStock = 0; }
+      }
+
+      if (matchedAny) {
+        return minStock === Infinity ? 0 : minStock;
+      }
+      return null;
+    }
+  };
+
+  const bestSellers = useMemo(() => {
+    if (!transactions || transactions.length === 0) return new Set<string>();
+    const counts: Record<string, number> = {};
+    transactions.forEach(t => {
+      t.items.forEach(item => {
+        counts[item.id] = (counts[item.id] || 0) + item.quantity;
+      });
+    });
+    const sorted = Object.entries(counts).sort((a, b) => b[1] - a[1]);
+    return new Set(sorted.slice(0, 3).map(s => s[0]));
+  }, [transactions]);
+
   const addToCart = (item: MenuItem) => {
+    const stock = getAvailableStock(item);
     setCart(prev => {
       const existing = prev.find(i => i.id === item.id);
+      const currentQty = existing ? existing.quantity : 0;
+      if (stock !== null && currentQty >= stock) {
+        return prev;
+      }
       if (existing) {
         return prev.map(i => i.id === item.id ? { ...i, quantity: i.quantity + 1 } : i);
       }
@@ -142,6 +210,12 @@ export default function POSView({
   const updateQuantity = (id: string, delta: number) => {
     setCart(prev => prev.map(item => {
       if (item.id === id) {
+        if (delta > 0) {
+           const stock = getAvailableStock(item);
+           if (stock !== null && item.quantity >= stock) {
+              return item; 
+           }
+        }
         const newQty = Math.max(1, item.quantity + delta);
         return { ...item, quantity: newQty };
       }
@@ -317,17 +391,16 @@ export default function POSView({
           handleBluetoothPrintDirectly(savedAddress);
         } else {
           try {
-            const result = await (CapacitorBluetoothSerial as any).listPairedDevices();
+            const result = await BluetoothThermalPrinter.listPairedDevices();
             const list = result.devices || [];
             // Case-insensitive search match for "rpp02n" or "RPP02N"
             const matchedDevice = list.find((d: any) => d.name && d.name.toLowerCase().includes('rpp02n'));
             if (matchedDevice) {
               localStorage.setItem('bt_printer_address', matchedDevice.address);
-              setSelectedBtDevice(matchedDevice);
               setPrinterMessage(`Auto-detect: Berhasil menemukan printer "${matchedDevice.name}". Menghubungkan...`);
               handleBluetoothPrintDirectly(matchedDevice.address);
             } else {
-              setPrinterMessage("Struk siap dicetak. Silakan sambungkan printer Bluetooth Anda di menu bawah.");
+              setPrinterMessage("Struk siap dicetak. Konfigurasikan printer Bluetooth Anda di Pengaturan.");
             }
           } catch (e: any) {
             console.error("Gagal mendeteksi nama RPP02N secara otomatis:", e);
@@ -445,9 +518,17 @@ export default function POSView({
           return `Rp${val.toLocaleString("id-ID")}`.replace(/\s/g, "");
         };
 
+        const customAddress = localStorage.getItem('bt_printer_address_text') || 'Burger POS Indonesia';
+        const customFooter = localStorage.getItem('bt_printer_footer_text') || 'TERIMA KASIH ATAS KUNJUNGANNYA';
+
         // Header Title Page
-        lines.push(centerText(businessName || "Burger Queen"));
-        lines.push(centerText("BURGERPOS INDONESIA"));
+        lines.push(centerText((businessName || "Burger Queen").toUpperCase()));
+        
+        // Custom Address (split by newline and center each line)
+        customAddress.split('\n').forEach(line => {
+          if (line.trim()) lines.push(centerText(line.trim()));
+        });
+        
         lines.push("--------------------------------");
 
         // Transaction Info Meta
@@ -485,8 +566,9 @@ export default function POSView({
         lines.push("================================");
 
         // Friendly footer block
-        lines.push(centerText("TERIMA KASIH ATAS KUNJUNGANNYA"));
-        lines.push(centerText("DIKEMBANGKAN OLEH BURGERPOS"));
+        customFooter.split('\n').forEach(line => {
+          if (line.trim()) lines.push(centerText(line.trim()));
+        });
         lines.push("");
         lines.push(""); // Ganti baris kosong di akhir untuk menghindari tarikan kertas terpotong
 
@@ -529,16 +611,16 @@ export default function POSView({
 
       if (Capacitor.isNativePlatform()) {
         setPrinterMessage("Menyambungkan printer Bluetooth...");
-        await (CapacitorBluetoothSerial as any).connect({ address });
+        await BluetoothThermalPrinter.connect({ address });
 
         setPrinterMessage("Mengirim data struk...");
-        await (CapacitorBluetoothSerial as any).write({ value: receiptPlainText });
+        await BluetoothThermalPrinter.write({ value: receiptPlainText });
 
         setPrinterMessage("Menyelesaikan pencetakan...");
         // Add ESC/POS universal line feed at the end just to be sure
-        await (CapacitorBluetoothSerial as any).write({ value: "\n\n\n\n" });
+        await BluetoothThermalPrinter.write({ value: "\n\n\n\n" });
 
-        await (CapacitorBluetoothSerial as any).disconnect();
+        await BluetoothThermalPrinter.disconnect();
         setPrinterMessage("Struk berhasil dicetak ke printer Bluetooth thermal!");
       } else {
         // High fidelity web simulation playground
@@ -793,69 +875,119 @@ export default function POSView({
           {viewMode === 'grid' ? (
             <div className="grid grid-cols-2 xs:grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 gap-4">
               <AnimatePresence mode="popLayout">
-                {filteredItems.map((item, idx) => (
+                {filteredItems.map((item, idx) => {
+                  const stock = getAvailableStock(item);
+                  const isOutOfStock = stock !== null && stock <= 0;
+                  const isBestSeller = bestSellers.has(item.id);
+                  return (
                   <motion.div
                     key={`pos-grid-${item.id || idx}-${idx}`}
                     layout
                     initial={{ opacity: 0, scale: 0.9 }}
                     animate={{ opacity: 1, scale: 1 }}
                     exit={{ opacity: 0, scale: 0.9 }}
-                    whileHover={{ y: -3 }}
-                    onClick={() => addToCart(item)}
-                    className="bg-soft-cream group shadow-md rounded-[18px] overflow-hidden cursor-pointer border border-soft-cream/5"
+                    whileHover={!isOutOfStock ? { y: -3 } : undefined}
+                    onClick={() => {
+                      if (!isOutOfStock) addToCart(item);
+                    }}
+                    className={cn(
+                      "group shadow-md rounded-[18px] overflow-hidden border transition-all relative",
+                      isOutOfStock 
+                        ? "bg-zinc-200 border-zinc-300 opacity-60 cursor-not-allowed grayscale" 
+                        : "bg-soft-cream border-soft-cream/5 cursor-pointer"
+                    )}
                   >
+                    {isBestSeller && !isOutOfStock && (
+                      <div className="absolute top-2 left-2 z-10 bg-red-500 text-white rounded-full p-1.5 shadow-lg shadow-red-500/30 ring-2 ring-white" title="Paling Laris">
+                        <Flame className="w-3 h-3 animate-pulse" />
+                      </div>
+                    )}
                     <div className="relative h-28 sm:h-32 overflow-hidden bg-charcoal/10">
                       <img 
                         src={item.image} 
                         alt={item.name} 
-                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                        className={cn("w-full h-full object-cover transition-transform duration-300", !isOutOfStock && "group-hover:scale-105")}
                       />
-                      {getCartItemQuantity(item.id) > 0 && (
+                      {getCartItemQuantity(item.id) > 0 && !isOutOfStock && (
                         <div className="absolute top-3 right-3 bg-amber text-charcoal font-black text-sm min-w-[28px] h-7 px-2 rounded-full shadow-xl border-2 border-charcoal/25 flex items-center justify-center z-[2]">
                           {getCartItemQuantity(item.id)}
                         </div>
                       )}
+                      {isOutOfStock && (
+                        <div className="absolute inset-0 bg-black/40 flex items-center justify-center">
+                          <span className="bg-red-500 text-white font-black text-[10px] px-2 py-1 rounded-md uppercase tracking-widest shadow-lg -rotate-12">HABIS</span>
+                        </div>
+                      )}
                     </div>
                     <div className="p-3">
-                      <p className="text-charcoal font-black text-xs sm:text-sm line-clamp-2 min-h-[2.5rem]" title={item.name}>{item.name}</p>
-                      <p className="text-amber font-black text-sm sm:text-base mt-1.5">{formatRupiah(item.price)}</p>
+                      <p className={cn("font-black text-xs sm:text-sm line-clamp-2 min-h-[2.5rem]", isOutOfStock ? "text-zinc-600" : "text-charcoal")} title={item.name}>{item.name}</p>
+                      <div className="flex flex-col 2xl:flex-row 2xl:items-center justify-between mt-1.5 gap-1">
+                        <p className={cn("font-black text-sm sm:text-base", isOutOfStock ? "text-zinc-500" : "text-amber")}>{formatRupiah(item.price)}</p>
+                        {stock !== null && !isOutOfStock && (
+                          <span className="text-[9px] font-bold text-amber/80 bg-amber/10 px-1.5 py-0.5 rounded-md border border-amber/20 w-fit">Stok: {stock}</span>
+                        )}
+                      </div>
                     </div>
                   </motion.div>
-                ))}
+                )})}
               </AnimatePresence>
             </div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3.5">
               <AnimatePresence mode="popLayout">
-                {filteredItems.map((item, idx) => (
+                {filteredItems.map((item, idx) => {
+                  const stock = getAvailableStock(item);
+                  const isOutOfStock = stock !== null && stock <= 0;
+                  const isBestSeller = bestSellers.has(item.id);
+                  return (
                   <motion.div
                     key={`pos-list-${item.id || idx}-${idx}`}
                     layout
                     initial={{ opacity: 0, y: 5 }}
                     animate={{ opacity: 1, y: 0 }}
                     exit={{ opacity: 0, y: -5 }}
-                    onClick={() => addToCart(item)}
-                    className="flex items-center justify-between bg-soft-cream/5 border border-soft-cream/5 p-2.5 rounded-xl hover:bg-soft-cream/10 transition-all cursor-pointer group"
+                    onClick={() => {
+                      if (!isOutOfStock) addToCart(item);
+                    }}
+                    className={cn(
+                      "flex items-center justify-between border p-2.5 rounded-xl transition-all group relative overflow-hidden",
+                      isOutOfStock 
+                        ? "bg-zinc-800/50 border-white/5 opacity-60 cursor-not-allowed grayscale" 
+                        : "bg-soft-cream/5 border-soft-cream/5 hover:bg-soft-cream/10 cursor-pointer"
+                    )}
                   >
-                    <div className="flex items-center gap-3 min-w-0">
+                    {isBestSeller && !isOutOfStock && (
+                      <div className="absolute -left-3 top-1/2 -translate-y-1/2 bg-red-500/20 text-red-500 px-4 py-1.5 rounded-r-full font-black text-[8px] uppercase tracking-widest flex items-center gap-1 shadow-sm">
+                        <Flame className="w-3 h-3" />
+                      </div>
+                    )}
+                    <div className={cn("flex items-center gap-3 min-w-0 relative z-10", isBestSeller && "ml-4")}>
                       <div className="relative flex-shrink-0">
                         <img src={item.image} className="w-11 h-11 rounded-lg object-cover bg-charcoal/20 flex-shrink-0" />
-                        {getCartItemQuantity(item.id) > 0 && (
+                        {getCartItemQuantity(item.id) > 0 && !isOutOfStock && (
                           <div className="absolute -top-2 -right-2 bg-amber text-charcoal font-black text-[11px] min-w-[20px] h-5 px-1.5 rounded-full shadow-lg border border-charcoal/15 flex items-center justify-center z-[2]">
                             {getCartItemQuantity(item.id)}
                           </div>
                         )}
+                        {isOutOfStock && (
+                           <div className="absolute inset-0 bg-black/60 rounded-lg flex items-center justify-center">
+                              <span className="text-red-500 font-bold text-[8px] uppercase tracking-tighter">Habis</span>
+                           </div>
+                        )}
                       </div>
                       <div className="min-w-0">
-                        <p className="text-xs sm:text-sm font-black text-soft-cream truncate" title={item.name}>{item.name}</p>
+                        <p className={cn("text-xs sm:text-sm font-black truncate", isOutOfStock ? "text-zinc-500" : "text-soft-cream")} title={item.name}>{item.name}</p>
                         <p className="text-[10px] text-soft-cream/40 mt-0.5">{item.category}</p>
                       </div>
                     </div>
-                    <div className="flex items-center gap-3 flex-shrink-0">
-                      <span className="text-xs sm:text-sm font-black text-amber">{formatRupiah(item.price)}</span>
+                    <div className="flex items-center gap-3 flex-shrink-0 flex-col items-end">
+                      <span className={cn("text-xs sm:text-sm font-black", isOutOfStock ? "text-zinc-500" : "text-amber")}>{formatRupiah(item.price)}</span>
+                      {stock !== null && !isOutOfStock && (
+                        <span className="text-[8px] font-bold text-amber/60">Stok: {stock}</span>
+                      )}
                     </div>
                   </motion.div>
-                ))}
+                )})}
               </AnimatePresence>
             </div>
           )}
@@ -1217,8 +1349,8 @@ export default function POSView({
                 className="bg-white text-black p-4 rounded-xl font-mono text-left shadow-lg border border-zinc-200 text-[10px] leading-tight select-all w-full flex flex-col mx-auto mb-4 border-t-8 border-t-amber"
               >
                 <div className="text-center font-black text-sm uppercase tracking-wide text-zinc-900 leading-none">{businessName}</div>
-                <div className="text-center text-[8px] text-zinc-400 uppercase tracking-widest font-black mt-1 mb-2">
-                  Burger POS Indonesia
+                <div className="text-center text-[8px] text-zinc-400 font-extrabold uppercase mt-1 mb-2 whitespace-pre-wrap leading-tight">
+                  {localStorage.getItem('bt_printer_address_text') || 'Burger POS Indonesia'}
                 </div>
                 
                 <div className="border-b border-dashed border-zinc-300 pb-2 mb-2 text-[10px] text-zinc-600 space-y-0.5">
@@ -1271,21 +1403,13 @@ export default function POSView({
                   </div>
                 </div>
                 
-                <div className="border-t border-dashed border-zinc-300 pt-2 text-center text-[7.5px] text-zinc-400 font-bold tracking-wider uppercase mt-1">
-                  TERIMA KASIH ATAS KUNJUNGANNYA<br/>BURGERPOS INDONESIA
+                <div className="border-t border-dashed border-zinc-300 pt-2 text-center text-[7.5px] text-zinc-400 font-bold tracking-wider uppercase mt-1 whitespace-pre-wrap leading-tight">
+                  {localStorage.getItem('bt_printer_footer_text') || 'TERIMA KASIH ATAS KUNJUNGANNYA\nBURGERPOS INDONESIA'}
                 </div>
               </div>
 
               {/* Action printing buttons */}
-              <div className="w-full grid grid-cols-2 gap-3 mb-4">
-                <button 
-                  type="button"
-                  onClick={printReceiptViaWeb}
-                  className="flex items-center justify-center gap-1.5 py-2.5 bg-zinc-200 text-zinc-800 rounded-xl font-bold text-[10px] hover:bg-zinc-300 transition-all uppercase tracking-wider"
-                >
-                  <Printer className="w-3.5 h-3.5 text-zinc-700" />
-                  Cetak Web
-                </button>
+              <div className="w-full flex flex-col gap-3 mb-4">
                 <button 
                   type="button"
                   disabled={isPrinting}
@@ -1294,19 +1418,18 @@ export default function POSView({
                     if (savedStr) {
                       handleBluetoothPrintDirectly(savedStr);
                     } else {
-                      setPrinterMessage("Pilih printer Bluetooth terlebih dahulu di menu pengaturan di bawah.");
-                      scanPrinters();
+                      setPrinterMessage("Pilih printer Bluetooth terlebih dahulu di menu pengaturan.");
                     }
                   }}
                   className={cn(
-                    "flex items-center justify-center gap-1.5 py-2.5 rounded-xl font-bold text-[10px] transition-all uppercase tracking-wider text-white shadow-sm",
+                    "w-full flex items-center justify-center gap-2 py-3 rounded-xl font-bold text-xs transition-all uppercase tracking-widest text-white shadow-lg",
                     isPrinting
                       ? "bg-zinc-400 cursor-not-allowed"
-                      : "bg-blue-600 hover:bg-blue-700 active:scale-95"
+                      : "bg-amber text-charcoal hover:bg-amber/90 active:scale-95 shadow-amber/20"
                   )}
                 >
-                  <Bluetooth className="w-3.5 h-3.5" />
-                  {isPrinting ? 'Mencetak...' : 'Bluetooth'}
+                  <Printer className="w-4 h-4" />
+                  {isPrinting ? 'Mencetak...' : 'Cetak Struk'}
                 </button>
               </div>
 
@@ -1320,60 +1443,7 @@ export default function POSView({
                 </div>
               )}
 
-              {/* Expandable thermal bluetooth settings */}
-              <div className="w-full border border-zinc-200 p-2.5 rounded-xl text-left bg-zinc-50 mb-4">
-                <div className="flex items-center justify-between">
-                  <span className="text-[9px] font-bold text-zinc-700 uppercase flex items-center gap-1">
-                    <Bluetooth className="w-3 h-3 text-blue-600 animate-pulse" />
-                    Printer Thermal (BT)
-                  </span>
-                  <button 
-                    type="button"
-                    disabled={isScanning}
-                    onClick={scanPrinters}
-                    className="text-[8px] font-black text-blue-600 hover:underline flex items-center gap-1"
-                  >
-                    {isScanning ? 'Mencari...' : 'Scan Printer'}
-                  </button>
-                </div>
-
-                <div className="mt-1.5 text-[8.5px] text-zinc-500 leading-tight">
-                  {selectedBtDevice ? (
-                    <div className="flex items-center gap-1.5 bg-green-50 text-green-700 px-1.5 py-1 rounded-md border border-green-200 truncate">
-                      <Check className="w-2.5 h-2.5 text-green-600 shrink-0" />
-                      <span className="font-semibold truncate">Saved: {selectedBtDevice.name || 'Printer'}</span>
-                    </div>
-                  ) : (
-                    <p className="text-zinc-400 text-[8px]">Belum ada printer Bluetooth default yang tersimpan.</p>
-                  )}
-                </div>
-
-                {/* List paired devices if populated */}
-                {pairedDevices.length > 0 && (
-                  <div className="mt-2 space-y-1 max-h-[100px] overflow-y-auto border-t border-zinc-200 pt-2">
-                    <p className="text-[7.5px] font-black tracking-wide text-zinc-400 uppercase mb-0.5">Pilih Perangkat:</p>
-                    {pairedDevices.map((device, idx) => {
-                      const isSelected = selectedBtDevice?.address === device.address;
-                      return (
-                        <button
-                          key={idx}
-                          type="button"
-                          onClick={() => selectPrinterDevice(device)}
-                          className={cn(
-                            "w-full text-left px-2 py-1 rounded-md transition-all text-[8px] flex justify-between items-center border",
-                            isSelected 
-                              ? "bg-amber text-charcoal font-bold border-amber" 
-                              : "bg-white hover:bg-zinc-100 text-zinc-700 border-zinc-200"
-                          )}
-                        >
-                          <span className="truncate max-w-[120px]">{device.name || 'Device Pos'}</span>
-                          <span className="text-[7.5px] opacity-70 font-mono tracking-wider shrink-0">{device.address}</span>
-                        </button>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
+              {/* Printer configuration UI has been moved to Settings */}
 
               <button 
                 onClick={() => {
@@ -1381,9 +1451,9 @@ export default function POSView({
                   setPrinterMessage(null);
                   setPairedDevices([]);
                 }}
-                className="w-full py-2.5 bg-charcoal text-soft-cream rounded-xl font-extrabold text-[11px] hover:scale-105 active:scale-95 transition-all shadow-xl shadow-charcoal/20 uppercase tracking-wider"
+                className="w-full py-3 bg-charcoal text-amber border border-amber/20 rounded-xl font-extrabold text-xs hover:bg-zinc-800 active:scale-95 transition-all shadow-xl shadow-charcoal/20 uppercase tracking-widest"
               >
-                Selesai & Struk Baru
+                Transaksi Baru
               </button>
             </motion.div>
           </div>

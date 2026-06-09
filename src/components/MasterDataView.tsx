@@ -679,45 +679,45 @@ export default function MasterDataView({
               initial={{ scale: 0.9, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.9, opacity: 0 }}
-              className="relative bg-soft-cream rounded-3xl p-8 max-w-md w-full shadow-2xl border border-soft-cream/20"
+              className="relative bg-soft-cream rounded-3xl p-6 max-w-md w-full shadow-2xl border border-soft-cream/20"
             >
-              <div className="flex items-center justify-between mb-6">
-                <h3 className="text-charcoal text-2xl font-bold ">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-charcoal text-xl font-bold ">
                   {editingMenuId ? 'Edit Menu Item' : 'Tambah Menu Baru'}
                 </h3>
                 <button onClick={closeMenuModal} className="p-2 hover:bg-charcoal/5 rounded-full text-charcoal/40">
-                  <X className="w-6 h-6" />
+                  <X className="w-5 h-5" />
                 </button>
               </div>
 
-              <div className="space-y-4 mb-8">
+              <div className="space-y-3 mb-6">
                 <div>
-                  <label className="text-charcoal/40 text-xs font-bold uppercase tracking-widest mb-1 block">Nama Menu</label>
+                  <label className="text-charcoal/40 text-[10px] font-bold uppercase tracking-widest mb-1 block">Nama Menu</label>
                   <input 
                     type="text" 
                     value={menuFormData.name}
                     onChange={(e) => setMenuFormData({...menuFormData, name: e.target.value})}
                     placeholder="e.g. Cheese Burger"
-                    className="w-full bg-charcoal/5 border border-charcoal/10 rounded-xl px-4 py-3 text-charcoal focus:outline-none focus:border-amber transition-colors"
+                    className="w-full bg-charcoal/5 border border-charcoal/10 rounded-lg px-3 py-2 text-sm text-charcoal focus:outline-none focus:border-amber transition-colors"
                   />
                 </div>
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <label className="text-charcoal/40 text-xs font-bold uppercase tracking-widest mb-1 block">Harga</label>
+                    <label className="text-charcoal/40 text-[10px] font-bold uppercase tracking-widest mb-1 block">Harga</label>
                     <input 
                       type="number" 
                       value={menuFormData.price}
                       onChange={(e) => setMenuFormData({...menuFormData, price: e.target.value})}
                       placeholder="45000"
-                      className="w-full bg-charcoal/5 border border-charcoal/10 rounded-xl px-4 py-3 text-charcoal focus:outline-none focus:border-amber transition-colors"
+                      className="w-full bg-charcoal/5 border border-charcoal/10 rounded-lg px-3 py-2 text-sm text-charcoal focus:outline-none focus:border-amber transition-colors"
                     />
                   </div>
                   <div>
-                    <label className="text-charcoal/40 text-xs font-bold uppercase tracking-widest mb-1 block">Kategori</label>
+                    <label className="text-charcoal/40 text-[10px] font-bold uppercase tracking-widest mb-1 block">Kategori</label>
                     <select 
                       value={menuFormData.category}
                       onChange={(e) => setMenuFormData({...menuFormData, category: e.target.value as Category})}
-                      className="w-full bg-charcoal/5 border border-charcoal/10 rounded-xl px-4 py-3 text-charcoal focus:outline-none focus:border-amber transition-colors appearance-none"
+                      className="w-full bg-charcoal/5 border border-charcoal/10 rounded-lg px-3 py-2 text-sm text-charcoal focus:outline-none focus:border-amber transition-colors appearance-none"
                     >
                       {categories.map((cat, idx) => (
                         <option key={`cat-opt-${cat.name}-${idx}`} value={cat.name}>{cat.name}</option>
@@ -726,49 +726,98 @@ export default function MasterDataView({
                   </div>
                 </div>
                 <div>
-                  <label className="text-charcoal/40 text-xs font-bold uppercase tracking-widest mb-1 block">Image URL</label>
-                  <input 
-                    type="text" 
-                    value={menuFormData.image}
-                    onChange={(e) => setMenuFormData({...menuFormData, image: e.target.value})}
-                    placeholder="https://..."
-                    className="w-full bg-charcoal/5 border border-charcoal/10 rounded-xl px-4 py-3 text-charcoal focus:outline-none focus:border-amber transition-colors mb-1"
-                  />
-                  <p className="text-[11px] text-charcoal/60 leading-relaxed mb-3">
-                    💡 <strong>Tips Google Drive:</strong> Anda bisa langsung menempelkan link sharing Google Drive Anda ke sini. Aplikasi akan otomatis mengubahnya menjadi link gambar langsung yang bisa ditampilkan. Pastikan setelan akses file di Google Drive diset ke <strong className="text-charcoal">"Siapa saja yang memiliki link"</strong> (Anyone with the link).
-                  </p>
+                  <label className="text-charcoal/40 text-[10px] font-bold uppercase tracking-widest mb-1 block">Foto Menu</label>
+                  <div className="relative">
+                    <input 
+                      type="file" 
+                      accept="image/*"
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (file) {
+                          const reader = new FileReader();
+                          reader.onloadend = () => {
+                            const img = new Image();
+                            img.onload = () => {
+                              const canvas = document.createElement('canvas');
+                              const SIZE = 500; // Force 1:1 square ratio for grid consistency
+                              let sourceX = 0;
+                              let sourceY = 0;
+                              let sourceSize = Math.min(img.width, img.height);
+                              
+                              if (img.width > img.height) {
+                                sourceX = (img.width - sourceSize) / 2;
+                              } else {
+                                sourceY = (img.height - sourceSize) / 2;
+                              }
+                              
+                              canvas.width = SIZE;
+                              canvas.height = SIZE;
+                              const ctx = canvas.getContext('2d');
+                              if (ctx) {
+                                ctx.drawImage(img, sourceX, sourceY, sourceSize, sourceSize, 0, 0, SIZE, SIZE);
+                                const compressedDataUrl = canvas.toDataURL('image/jpeg', 0.8);
+                                setMenuFormData({ ...menuFormData, image: compressedDataUrl });
+                              } else {
+                                setMenuFormData({ ...menuFormData, image: reader.result as string });
+                              }
+                            };
+                            img.src = reader.result as string;
+                          };
+                          reader.readAsDataURL(file);
+                        }
+                      }}
+                      className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-20"
+                      title="Upload File Gambar"
+                    />
+                    <div className="w-full bg-charcoal/5 border border-charcoal/10 border-dashed rounded-lg px-3 py-3 text-sm text-charcoal flex flex-col items-center justify-center gap-2 hover:bg-charcoal/10 transition-colors relative overflow-hidden group h-32">
+                      {menuFormData.image && menuFormData.image.startsWith('data:image') ? (
+                        <>
+                          <img src={menuFormData.image} alt="Preview" className="absolute inset-0 w-full h-full object-contain bg-black/5 opacity-80 group-hover:opacity-40 transition-opacity" />
+                          <div className="relative z-10 flex items-center gap-1.5 bg-white/90 px-3 py-1.5 rounded-full shadow-sm backdrop-blur-sm hidden group-hover:flex">
+                            <Edit3 className="w-4 h-4 text-charcoal/60" />
+                            <span className="text-charcoal/80 font-bold text-xs">Ganti Foto</span>
+                          </div>
+                        </>
+                      ) : (
+                        <>
+                          <ImageIcon className="w-6 h-6 text-charcoal/40" />
+                          <span className="text-charcoal/60 font-semibold text-xs">Ketuk untuk pilih foto</span>
+                        </>
+                      )}
+                    </div>
+                  </div>
                 </div>
 
-                <div className="flex items-center gap-3 bg-charcoal/5 px-4 py-3 rounded-xl border border-charcoal/10">
+                <div className="flex items-center gap-2 bg-charcoal/5 px-3 py-2 rounded-lg border border-charcoal/10">
                   <input 
                     type="checkbox" 
                     id="isActiveMenu"
                     checked={menuFormData.isActive !== false}
                     onChange={(e) => setMenuFormData({...menuFormData, isActive: e.target.checked})}
-                    className="w-4 h-4 rounded text-amber focus:ring-amber bg-charcoal/5 border-charcoal/10 accent-amber"
+                    className="w-3.5 h-3.5 rounded text-amber focus:ring-amber bg-charcoal/5 border-charcoal/10 accent-amber"
                   />
-                  <label htmlFor="isActiveMenu" className="text-charcoal text-sm font-semibold select-none cursor-pointer">
+                  <label htmlFor="isActiveMenu" className="text-charcoal text-xs font-semibold select-none cursor-pointer">
                     Aktif (Tampilkan di POS)
                   </label>
                 </div>
 
-                <div className="pt-4 border-t border-charcoal/10">
-                  <div className="flex items-center justify-between mb-3">
-                    <label className="text-charcoal/40 text-xs font-bold uppercase tracking-widest block">Bahan Baku (Ingredients)</label>
+                <div className="pt-3 border-t border-charcoal/10">
+                  <div className="flex items-center justify-between mb-2">
+                    <label className="text-charcoal/40 text-[10px] font-bold uppercase tracking-widest block">Bahan Baku</label>
                     <button 
                       onClick={() => setMenuFormData({
                         ...menuFormData, 
                         ingredients: [...menuFormData.ingredients, { stockItemId: inventory[0]?.name || '', quantity: 1 }]
                       })}
-                      className="text-[10px] font-black text-amber hover:underline uppercase tracking-widest"
+                      className="text-[9px] font-black text-amber hover:underline uppercase tracking-widest"
                     >
-                      + Tambah Bahan
+                      + Tambah
                     </button>
                   </div>
                   
-                  <div className="space-y-2 max-h-40 overflow-y-auto custom-scrollbar pr-2">
+                  <div className="space-y-1.5 max-h-32 overflow-y-auto custom-scrollbar pr-2">
                     {menuFormData.ingredients.map((ing, idx) => (
-                      <div key={idx} className="flex gap-2 items-center">
+                      <div key={idx} className="flex gap-1.5 items-center">
                         <select 
                           value={ing.stockItemId}
                           onChange={(e) => {
@@ -776,7 +825,7 @@ export default function MasterDataView({
                             newIngs[idx].stockItemId = e.target.value;
                             setMenuFormData({...menuFormData, ingredients: newIngs});
                           }}
-                          className="flex-1 bg-charcoal/5 border border-charcoal/10 rounded-xl px-3 py-2 text-sm text-charcoal focus:outline-none focus:border-amber transition-colors"
+                          className="flex-1 bg-charcoal/5 border border-charcoal/10 rounded-lg px-2 py-1.5 text-xs text-charcoal focus:outline-none focus:border-amber transition-colors"
                         >
                           {inventory.map((inv, invIdx) => (
                             <option key={`ing-opt-${inv.name}-${invIdx}`} value={inv.name}>{inv.name}</option>
@@ -790,7 +839,7 @@ export default function MasterDataView({
                             newIngs[idx].quantity = parseFloat(e.target.value) || 0;
                             setMenuFormData({...menuFormData, ingredients: newIngs});
                           }}
-                          className="w-20 bg-charcoal/5 border border-charcoal/10 rounded-xl px-3 py-2 text-sm text-charcoal focus:outline-none focus:border-amber transition-colors"
+                          className="w-16 bg-charcoal/5 border border-charcoal/10 rounded-lg px-2 py-1.5 text-xs text-charcoal focus:outline-none focus:border-amber transition-colors"
                           placeholder="Qty"
                         />
                         <button 
@@ -798,34 +847,34 @@ export default function MasterDataView({
                             const newIngs = menuFormData.ingredients.filter((_, i) => i !== idx);
                             setMenuFormData({...menuFormData, ingredients: newIngs});
                           }}
-                          className="p-2 text-soft-red hover:bg-soft-red/10 rounded-lg transition-colors"
+                          className="p-1.5 text-soft-red hover:bg-soft-red/10 rounded-md transition-colors"
                         >
-                          <Trash2 className="w-4 h-4" />
+                          <Trash2 className="w-3.5 h-3.5" />
                         </button>
                       </div>
                     ))}
                     {menuFormData.ingredients.length === 0 && (
-                      <p className="text-center py-4 text-xs text-charcoal/30 border-2 border-dashed border-charcoal/5 rounded-xl">
-                        Belum ada bahan baku yang dihubungkan
+                      <p className="text-center py-2 text-[10px] text-charcoal/30 border-2 border-dashed border-charcoal/5 rounded-lg">
+                        Belum ada bahan baku
                       </p>
                     )}
                   </div>
                 </div>
               </div>
               
-              <div className="flex gap-4">
+              <div className="flex gap-3">
                 <button 
                   onClick={closeMenuModal}
-                  className="flex-1 py-3 bg-charcoal/10 text-charcoal font-bold rounded-xl hover:bg-charcoal/20 transition-colors"
+                  className="flex-1 py-2.5 bg-charcoal/10 text-charcoal text-sm font-bold rounded-xl hover:bg-charcoal/20 transition-colors"
                 >
                   Batal
                 </button>
                 <button 
                   disabled={!menuFormData.name || !menuFormData.price}
                   onClick={handleSaveMenu}
-                  className="flex-1 py-3 bg-amber text-charcoal font-bold rounded-xl hover:shadow-lg disabled:opacity-50 disabled:hover:shadow-none transition-all"
+                  className="flex-1 py-2.5 bg-amber text-charcoal text-sm font-bold rounded-xl hover:shadow-lg disabled:opacity-50 disabled:hover:shadow-none transition-all"
                 >
-                  {editingMenuId ? 'Simpan Perubahan' : 'Tambah Menu'}
+                  {editingMenuId ? 'Simpan' : 'Tambah'}
                 </button>
               </div>
             </motion.div>

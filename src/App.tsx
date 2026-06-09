@@ -447,6 +447,7 @@ export default function App() {
             onCheckout={addTransaction}
             inventory={inventory}
             onUpdateInventory={setInventoryAndSync}
+            transactions={transactions}
             role={session?.role}
             businessName={businessSettings.name}
             businessLogo={businessSettings.logo}
@@ -572,6 +573,7 @@ export default function App() {
             onCheckout={addTransaction}
             inventory={inventory}
             onUpdateInventory={setInventoryAndSync}
+            transactions={transactions}
             role={session?.role}
             businessName={businessSettings.name}
             businessLogo={businessSettings.logo}

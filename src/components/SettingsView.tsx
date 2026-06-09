@@ -1,8 +1,10 @@
 import { useState, useEffect } from 'react';
-import { Settings, User, Bell, Shield, Smartphone, Globe, Moon, Sun, Save, MoreVertical, Users, Trash2, Plus, UserPlus, Key, Edit2 } from 'lucide-react';
+import { Settings, User, Bell, Shield, Smartphone, Globe, Moon, Sun, Save, MoreVertical, Users, Trash2, Plus, UserPlus, Key, Edit2, Printer, Search, Check, Bluetooth } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '../lib/utils';
 import { AppUser, UserRole } from '../types';
+import { BluetoothThermalPrinter } from '../lib/bluetooth';
+import { Capacitor } from '@capacitor/core';
 
 interface SettingsViewProps {
   onToggleSidebar?: () => void;
@@ -30,6 +32,11 @@ export default function SettingsView({
   const [activeSegment, setActiveSegment] = useState('umum');
   const [bName, setBName] = useState(businessName);
   const [bLogo, setBLogo] = useState(businessLogo);
+  
+  // Struk / Toko states
+  const [bEmail, setBEmail] = useState(() => localStorage.getItem('bt_printer_email') || "admin@burgerpos.com");
+  const [bAddress, setBAddress] = useState(() => localStorage.getItem('bt_printer_address_text') || "Jl. Sudirman No. 123, Jakarta");
+  const [bFooterMessage, setBFooterMessage] = useState(() => localStorage.getItem('bt_printer_footer_text') || "Terima kasih atas kunjungan Anda!");
 
   useEffect(() => {
     setBName(businessName);
@@ -63,6 +70,86 @@ export default function SettingsView({
     displayName: '',
     role: 'CASHIER' as UserRole
   });
+
+  // Printer State
+  const [isScanning, setIsScanning] = useState(false);
+  const [pairedDevices, setPairedDevices] = useState<any[]>([]);
+  const [selectedBtDevice, setSelectedBtDevice] = useState<any | null>(null);
+  const [printerMessage, setPrinterMessage] = useState<string | null>(null);
+
+  // Initialize selected device based on localStorage
+  useEffect(() => {
+    const savedAddress = localStorage.getItem('bt_printer_address');
+    if (savedAddress) {
+      // Create a dummy device object to display if we don't have the full name
+      setSelectedBtDevice({ address: savedAddress, name: 'Printer Tersimpan' });
+    }
+  }, []);
+
+  const scanPrinters = async () => {
+    setIsScanning(true);
+    setPrinterMessage(null);
+    try {
+      if (Capacitor.isNativePlatform()) {
+        const result = await BluetoothThermalPrinter.listPairedDevices();
+        const list = result.devices || [];
+        setPairedDevices(list);
+        
+        const savedAddress = localStorage.getItem('bt_printer_address');
+        let found = null;
+        if (savedAddress) {
+          found = list.find((d: any) => d.address === savedAddress);
+        }
+        if (!found) {
+          found = list.find((d: any) => d.name && d.name.toLowerCase().includes('rpp02n'));
+          if (found) {
+            localStorage.setItem('bt_printer_address', found.address);
+            setPrinterMessage(`Printer "${found.name}" otomatis ditemukan dan disimpan!`);
+          }
+        }
+        if (found) {
+          setSelectedBtDevice(found);
+        }
+
+        if (list.length === 0) {
+          setPrinterMessage("Tidak ada printer terdeteksi. Silakan pasangkan perangkat Bluetooth di pengaturan OS.");
+        }
+      } else {
+        setPrinterMessage("Menjalankan simulasi Bluetooth di lingkungan Web...");
+        await new Promise((resolve) => setTimeout(resolve, 1000));
+        
+        const mockList = [
+          { name: "RPP02N (Virtual Thermal Printer)", address: "00:11:22:33:44:55" },
+          { name: "MOCK-Zjiang-Receipt-POS (Virtual)", address: "88:0F:10:22:A3:4B" }
+        ];
+        setPairedDevices(mockList);
+
+        const savedAddress = localStorage.getItem('bt_printer_address');
+        let found = null;
+        if (savedAddress) {
+          found = mockList.find((d: any) => d.address === savedAddress);
+        }
+        if (!found) {
+          found = mockList.find((d: any) => d.name && d.name.toLowerCase().includes('rpp02n'));
+        }
+        if (found) {
+          setSelectedBtDevice(found);
+        }
+        setPrinterMessage("Simulasi: Berhasil mendeteksi 2 perangkat. Pilih salah satu.");
+      }
+    } catch (err: any) {
+      console.error("Gagal memindai printer bluetooth:", err);
+      setPrinterMessage("Gagal scan: " + (err.message || String(err)));
+    } finally {
+      setIsScanning(false);
+    }
+  };
+
+  const selectPrinterDevice = (device: any) => {
+    setSelectedBtDevice(device);
+    localStorage.setItem('bt_printer_address', device.address);
+    setPrinterMessage(`Printer "${device.name || 'Thermal'}" berhasil disimpan!`);
+  };
 
   const handleStartEdit = (user: AppUser) => {
     setEditFormData({
@@ -308,7 +395,8 @@ export default function SettingsView({
                       <label className="text-xs font-bold text-soft-cream/40 uppercase tracking-widest">Alamat Email Kontak</label>
                       <input 
                         type="email" 
-                        defaultValue="admin@thecharcoal.com"
+                        value={bEmail}
+                        onChange={(e) => setBEmail(e.target.value)}
                         className="w-full bg-soft-cream/5 border border-soft-cream/10 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-amber transition-colors text-soft-cream"
                       />
                     </div>
@@ -317,7 +405,18 @@ export default function SettingsView({
                       <label className="text-xs font-bold text-soft-cream/40 uppercase tracking-widest">Alamat Lengkap Toko</label>
                       <textarea 
                         rows={3}
-                        defaultValue="Jl. Sudirman No. 123, Jakarta Pusat"
+                        value={bAddress}
+                        onChange={(e) => setBAddress(e.target.value)}
+                        className="w-full bg-soft-cream/5 border border-soft-cream/10 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-amber transition-colors resize-none text-soft-cream"
+                      />
+                    </div>
+
+                    <div className="col-span-1 md:col-span-2 space-y-2">
+                      <label className="text-xs font-bold text-soft-cream/40 uppercase tracking-widest">Pesan Penutup Struk (Footer)</label>
+                      <textarea 
+                        rows={2}
+                        value={bFooterMessage}
+                        onChange={(e) => setBFooterMessage(e.target.value)}
                         className="w-full bg-soft-cream/5 border border-soft-cream/10 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-amber transition-colors resize-none text-soft-cream"
                       />
                     </div>
@@ -327,6 +426,9 @@ export default function SettingsView({
                     <button
                       onClick={() => {
                         setIsSaving(true);
+                        localStorage.setItem('bt_printer_email', bEmail);
+                        localStorage.setItem('bt_printer_address_text', bAddress);
+                        localStorage.setItem('bt_printer_footer_text', bFooterMessage);
                         onUpdateBusinessSettings({ name: bName || 'BurgerPOS', logo: bLogo || 'B' });
                         setTimeout(() => {
                           setIsSaving(false);
@@ -429,7 +531,7 @@ export default function SettingsView({
               </motion.div>
             )}
 
-            {(activeSegment === 'notif' || activeSegment === 'perangkat') && (
+            {activeSegment === 'notif' && (
               <motion.div 
                 initial={{ opacity: 0, x: 20 }}
                 animate={{ opacity: 1, x: 0 }}
@@ -440,7 +542,106 @@ export default function SettingsView({
                 </div>
                 <div>
                   <h3 className="text-xl font-bold">Fitur Segera Hadir</h3>
-                  <p className="text-soft-cream/40 max-w-xs">Bagian {segments.find(s => s.id === activeSegment)?.label} sedang dalam tahap pengembangan.</p>
+                  <p className="text-soft-cream/40 max-w-xs">Bagian Notifikasi sedang dalam tahap pengembangan.</p>
+                </div>
+              </motion.div>
+            )}
+
+            {activeSegment === 'perangkat' && (
+              <motion.div 
+                initial={{ opacity: 0, x: 20 }}
+                animate={{ opacity: 1, x: 0 }}
+                className="space-y-6"
+              >
+                <div className="flex justify-between items-center border-b border-soft-cream/10 pb-4">
+                  <div>
+                    <h2 className="text-xl font-bold uppercase tracking-widest text-[10px] text-soft-cream/40">Pengaturan Perangkat</h2>
+                    <p className="text-xs text-soft-cream/30 mt-1">Konfigurasi printer kasir</p>
+                  </div>
+                </div>
+
+                <div className="bg-soft-cream/5 border border-soft-cream/10 rounded-2xl p-6">
+                  <div className="flex items-center justify-between mb-4">
+                    <div className="flex items-center gap-3">
+                      <div className="p-3 bg-amber/10 rounded-xl text-amber">
+                        <Printer className="w-6 h-6" />
+                      </div>
+                      <div>
+                        <h3 className="font-bold">Printer Thermal (Bluetooth)</h3>
+                        <p className="text-[10px] sm:text-xs text-soft-cream/40">Untuk cetak struk transaksi otomatis</p>
+                      </div>
+                    </div>
+                    <button 
+                      type="button"
+                      disabled={isScanning}
+                      onClick={scanPrinters}
+                      className="px-4 py-2 bg-charcoal border border-soft-cream/20 hover:border-amber text-xs font-bold rounded-xl flex items-center gap-2 transition-all hover:text-amber"
+                    >
+                      <Search className={cn("w-3.5 h-3.5", isScanning && "animate-spin")} />
+                      {isScanning ? 'Mencari...' : 'Scan Printer'}
+                    </button>
+                  </div>
+
+                  {printerMessage && (
+                    <div className="mt-3 mb-4 p-3 bg-amber/10 border border-amber/20 rounded-xl text-xs text-amber font-mono text-center">
+                      {printerMessage}
+                    </div>
+                  )}
+
+                  <div className="bg-charcoal/50 rounded-xl p-4 border border-soft-cream/5">
+                    <p className="text-xs font-bold text-soft-cream/40 uppercase tracking-widest mb-3">Printer Tersimpan</p>
+                    {selectedBtDevice ? (
+                      <div className="flex items-center gap-3 bg-soft-cream/5 border border-amber/30 px-4 py-3 rounded-xl border-dashed">
+                        <Bluetooth className="w-5 h-5 text-amber" />
+                        <div>
+                          <p className="text-sm font-bold text-amber">{selectedBtDevice.name || 'Printer'}</p>
+                          <p className="text-[10px] text-soft-cream/40 font-mono mt-0.5">{selectedBtDevice.address}</p>
+                        </div>
+                        <div className="ml-auto flex items-center gap-1 bg-amber/10 text-amber px-2 py-1 rounded text-[10px] font-bold">
+                          <Check className="w-3 h-3" />
+                          Aktif
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="text-center py-6 text-soft-cream/20 border-2 border-dashed border-soft-cream/5 rounded-xl">
+                        <Bluetooth className="w-6 h-6 mx-auto mb-2 opacity-50" />
+                        <p className="text-xs font-medium">Belum ada printer Bluetooth yang dipilih.</p>
+                      </div>
+                    )}
+                  </div>
+
+                  {pairedDevices.length > 0 && (
+                    <div className="mt-6 space-y-2">
+                      <p className="text-xs font-bold text-soft-cream/40 uppercase tracking-widest mb-2">Perangkat Ditemukan</p>
+                      {pairedDevices.map((device, idx) => {
+                        const isSelected = selectedBtDevice?.address === device.address;
+                        return (
+                          <button
+                            key={idx}
+                            type="button"
+                            onClick={() => selectPrinterDevice(device)}
+                            className={cn(
+                              "w-full text-left px-4 py-3 rounded-xl transition-all flex items-center justify-between border",
+                              isSelected 
+                                ? "bg-amber text-charcoal font-bold border-amber" 
+                                : "bg-charcoal hover:bg-soft-cream/5 text-soft-cream border-soft-cream/10"
+                            )}
+                          >
+                            <div className="flex items-center gap-3">
+                              <Printer className={cn("w-4 h-4", isSelected ? "text-charcoal" : "text-soft-cream/50")} />
+                              <div>
+                                <span className="block text-sm">{device.name || 'Device Pos'}</span>
+                                <span className={cn("text-[10px] font-mono tracking-wider", isSelected ? "text-charcoal/70" : "text-soft-cream/30" )}>
+                                  {device.address}
+                                </span>
+                              </div>
+                            </div>
+                            {isSelected && <Check className="w-5 h-5" />}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
                 </div>
               </motion.div>
             )}
