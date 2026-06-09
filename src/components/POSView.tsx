@@ -999,7 +999,20 @@ export default function POSView({
         <aside className="w-72 bg-charcoal border-l border-soft-cream/10 flex flex-col">
         <div className="px-3 py-2.5 border-b border-soft-cream/10 flex items-center justify-between">
           <div>
-            <h2 className="text-sm font-bold text-soft-cream">Keranjang Belanja</h2>
+            <div className="flex items-center gap-2">
+              <h2 className="text-sm font-bold text-soft-cream">Keranjang Belanja</h2>
+              {localStorage.getItem('bt_printer_address') ? (
+                <span className="px-1.5 py-0.5 bg-green-500/10 text-green-500 rounded flex items-center gap-1 text-[8px] font-black uppercase tracking-wider" title="Printer Terhubung">
+                  <Printer className="w-2.5 h-2.5" />
+                  OK
+                </span>
+              ) : (
+                <span className="px-1.5 py-0.5 bg-soft-red/10 text-soft-red rounded flex items-center gap-1 text-[8px] font-black uppercase tracking-wider" title="Printer Belum Dikonfigurasi">
+                  <Printer className="w-2.5 h-2.5" />
+                  X
+                </span>
+              )}
+            </div>
             <p className="text-[9px] text-soft-cream/40 mt-0.5 uppercase tracking-wider">Order #12345</p>
           </div>
           {cart.length > 0 && (
@@ -1519,7 +1532,18 @@ export default function POSView({
                 <div>
                   <h3 className="text-base font-black text-soft-cream flex items-center gap-2">
                     <ShoppingCart className="w-4 h-4 text-amber" />
-                    <span>Detail Keranjang Belanja</span>
+                    <span>Keranjang Belanja</span>
+                    {localStorage.getItem('bt_printer_address') ? (
+                      <span className="px-1.5 py-0.5 bg-green-500/10 text-green-500 rounded flex items-center gap-1 text-[9px] font-black uppercase tracking-wider" title="Printer Terhubung">
+                        <Printer className="w-3 h-3" />
+                        OK
+                      </span>
+                    ) : (
+                      <span className="px-1.5 py-0.5 bg-soft-red/10 text-soft-red rounded flex items-center gap-1 text-[9px] font-black uppercase tracking-wider" title="Printer Belum Dikonfigurasi">
+                        <Printer className="w-3 h-3" />
+                        X
+                      </span>
+                    )}
                   </h3>
                   <p className="text-[9px] text-soft-cream/40 uppercase tracking-widest font-bold">Order Aktif • {cart.reduce((acc, curr) => acc + curr.quantity, 0)} Item</p>
                 </div>
