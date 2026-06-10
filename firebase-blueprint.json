@@ -1,128 +1,97 @@
 {
   "entities": {
-    "MenuItem": {
-      "title": "Menu Item",
-      "description": "Products available for sale in the POS",
+    "User": {
+      "title": "User",
+      "description": "System users including super_admin, owner, leader, and kasir",
       "type": "object",
       "properties": {
-        "id": { "type": "string" },
+        "uid": { "type": "string" },
+        "email": { "type": "string" },
         "name": { "type": "string" },
-        "price": { "type": "number" },
-        "category": { "type": "string" },
-        "image": { "type": "string" },
-        "isActive": { "type": "boolean" },
-        "ingredients": {
-          "type": "array",
-          "items": {
-            "type": "object",
-            "properties": {
-              "stockItemId": { "type": "string" },
-              "quantity": { "type": "number" }
-            }
-          }
-        }
+        "role": { "type": "string", "enum": ["super_admin", "owner", "leader", "kasir"] },
+        "toko_id": { "type": "string", "description": "Null for super_admin" },
+        "cabang_id": { "type": "string", "description": "Null for super_admin and owner" }
       },
-      "required": ["name", "price", "category"]
+      "required": ["uid", "email", "name", "role"]
     },
-    "Category": {
-      "title": "Category",
-      "description": "Product categories",
+    "Toko": {
+      "title": "Toko",
+      "description": "Tenant definition representing a store or business",
       "type": "object",
       "properties": {
-        "name": { "type": "string" },
-        "isActive": { "type": "boolean" }
+        "toko_id": { "type": "string" },
+        "nama_toko": { "type": "string" },
+        "owner_id": { "type": "string" },
+        "status": { "type": "string", "enum": ["active", "inactive"] },
+        "created_at": { "type": "string", "format": "date-time" }
       },
-      "required": ["name"]
+      "required": ["toko_id", "nama_toko", "owner_id", "status", "created_at"]
     },
-    "PaymentMethod": {
-      "title": "Payment Method",
-      "description": "Available payment methods",
+    "Cabang": {
+      "title": "Cabang",
+      "description": "Store branches belonging to a specific Toko",
       "type": "object",
       "properties": {
-        "name": { "type": "string" },
-        "isActive": { "type": "boolean" }
+        "cabang_id": { "type": "string" },
+        "toko_id": { "type": "string" },
+        "nama_cabang": { "type": "string" },
+        "alamat": { "type": "string" }
       },
-      "required": ["name"]
+      "required": ["cabang_id", "toko_id", "nama_cabang", "alamat"]
     },
-    "Transaction": {
-      "title": "Transaction",
-      "description": "Sales records",
+    "Menu": {
+      "title": "Menu",
+      "description": "Products available for sale, specified per Cabang",
       "type": "object",
       "properties": {
-        "id": { "type": "string" },
-        "orderNumber": { "type": "string" },
-        "timestamp": { "type": "string", "format": "date-time" },
-        "total": { "type": "number" },
-        "paymentMethod": { "type": "string" },
-        "status": { "type": "string", "enum": ["COMPLETED", "VOID"] },
-        "items": { "type": "array" }
+        "menu_id": { "type": "string" },
+        "toko_id": { "type": "string" },
+        "cabang_id": { "type": "string" },
+        "nama_produk": { "type": "string" },
+        "harga": { "type": "number" },
+        "stok": { "type": "number" }
       },
-      "required": ["orderNumber", "total", "paymentMethod", "status"]
+      "required": ["menu_id", "toko_id", "cabang_id", "nama_produk", "harga", "stok"]
     },
-    "StockItem": {
-      "title": "Stock Item",
-      "description": "Inventory ingredients",
+    "Transaksi": {
+      "title": "Transaksi",
+      "description": "Transaction records scoped to a Cabang",
       "type": "object",
       "properties": {
-        "name": { "type": "string" },
-        "used": { "type": "number" },
-        "remaining": { "type": "number" },
-        "status": { "type": "string", "enum": ["AMAN", "KRITIS"] },
-        "isActive": { "type": "boolean" }
+        "transaksi_id": { "type": "string" },
+        "cabang_id": { "type": "string" },
+        "kasir_id": { "type": "string" },
+        "role_eksekutor": { "type": "string", "enum": ["super_admin", "owner", "leader", "kasir"] },
+        "total_bayar": { "type": "number" },
+        "system_datetime": { "type": "string", "format": "date-time" },
+        "business_date": { "type": "string", "description": "YYYY-MM-DD" },
+        "status_transaksi": { "type": "string", "enum": ["success", "deleted"] },
+        "deleted_at": { "type": "string", "format": "date-time" },
+        "deleted_by": { "type": "string" }
       },
-      "required": ["name", "remaining", "status"]
-    },
-    "AppUser": {
-      "title": "Application User",
-      "description": "System users with roles",
-      "type": "object",
-      "properties": {
-        "username": { "type": "string" },
-        "password": { "type": "string" },
-        "displayName": { "type": "string" },
-        "role": { "type": "string", "enum": ["ADMIN", "CASHIER"] }
-      },
-      "required": ["username", "password", "role"]
-    },
-    "BusinessSettings": {
-      "title": "Business Settings",
-      "description": "Store business branding name and logo",
-      "type": "object",
-      "properties": {
-        "name": { "type": "string" },
-        "logo": { "type": "string" }
-      },
-      "required": ["name", "logo"]
+      "required": ["transaksi_id", "cabang_id", "kasir_id", "role_eksekutor", "total_bayar", "system_datetime", "business_date", "status_transaksi"]
     }
   },
   "firestore": {
-    "menuItems": {
-      "schema": "MenuItem",
-      "description": "Store all menu products"
-    },
-    "categories": {
-      "schema": "Category",
-      "description": "Store all product categories"
-    },
-    "paymentMethods": {
-      "schema": "PaymentMethod",
-      "description": "Store available payment methods"
-    },
-    "transactions": {
-      "schema": "Transaction",
-      "description": "Store all sales transactions"
-    },
-    "inventory": {
-      "schema": "StockItem",
-      "description": "Store all inventory items"
-    },
     "users": {
-      "schema": "AppUser",
-      "description": "Store all application users"
+      "schema": { "$ref": "User" },
+      "description": "Root collection for all users"
     },
-    "businessSettings": {
-      "schema": "BusinessSettings",
-      "description": "Store business branding metadata"
+    "toko": {
+      "schema": { "$ref": "Toko" },
+      "description": "Root collection for tenants/stores"
+    },
+    "cabang": {
+      "schema": { "$ref": "Cabang" },
+      "description": "Root collection for branches"
+    },
+    "menu": {
+      "schema": { "$ref": "Menu" },
+      "description": "Root collection for products/menu items"
+    },
+    "transaksi": {
+      "schema": { "$ref": "Transaksi" },
+      "description": "Root collection for transactions/orders"
     }
   }
 }

@@ -6,140 +6,30 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
-    // Global helpers
-    function isSignedIn() {
+    function isSuperAdmin() {
+      return request.auth != null && request.auth.token.email == 'irvan.syar@gmail.com';
+    }
+
+    function isAuthenticated() {
       return request.auth != null;
     }
 
-    function isAdmin() {
-      return isSignedIn() && (
-        request.auth.token.email == 'irvan.syar@gmail.com' ||
-        request.auth.token.email_verified == true
-      );
-    }
-
-    function isValidId(id) {
-      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
-    }
-
-    function incoming() {
-      return request.resource.data;
-    }
-
-    function existing() {
-      return resource.data;
-    }
-
-    // Entity Validations
-    function isValidAppUser(data) {
-      return data.keys().hasAll(['username', 'password', 'role']) &&
-             data.username is string && data.username.size() >= 3 && data.username.size() <= 32 &&
-             data.password is string && data.password.size() >= 4 &&
-             data.role in ['ADMIN', 'CASHIER'] &&
-             (data.get('displayName', '') is string);
-    }
-
-    function isValidMenuItem(data) {
-      return data.keys().hasAll(['name', 'price', 'category']) &&
-             data.name is string && data.name.size() <= 100 &&
-             data.price is number && data.price >= 0 &&
-             data.category is string &&
-             (data.get('isActive', true) is bool) &&
-             (data.get('image', '') is string);
-    }
-
-    function isValidCategory(data) {
-      return data.keys().hasAll(['name']) &&
-             data.name is string && data.name.size() <= 64 &&
-             (data.get('isActive', true) is bool);
-    }
-
-    function isValidPaymentMethod(data) {
-      return data.keys().hasAll(['name']) &&
-             data.name is string && data.name.size() <= 64 &&
-             (data.get('isActive', true) is bool);
-    }
-
-    function isValidTransaction(data) {
-      return data.keys().hasAll(['orderNumber', 'total', 'paymentMethod', 'status', 'timestamp', 'items']) &&
-             data.orderNumber is string &&
-             data.total is number &&
-             data.paymentMethod is string &&
-             data.status in ['COMPLETED', 'VOID'] &&
-             data.timestamp is string &&
-             data.items is list;
-    }
-
-    function isValidStockItem(data) {
-      return data.keys().hasAll(['name', 'remaining', 'status']) &&
-             data.name is string &&
-             data.remaining is number &&
-             data.status in ['AMAN', 'KRITIS'] &&
-             (data.get('used', 0) is number) &&
-             (data.get('isActive', true) is bool);
-    }
-
-    function isValidBusinessSettings(data) {
-      return data.keys().hasAll(['name', 'logo']) &&
-             data.name is string && data.name.size() <= 128 &&
-             data.logo is string && data.logo.size() <= 2000;
-    }
-
-    // Collection matches
-    match /menuItems/{itemId} {
-      allow read: if true;
-      allow create: if true;
-      allow update: if true;
-      allow delete: if true;
-    }
-
-    match /categories/{catId} {
-      allow read: if true;
-      allow create: if true;
-      allow update: if true;
-      allow delete: if true;
-    }
-
-    match /payments/{payId} {
-      allow read: if true;
-      allow create: if true;
-      allow update: if true;
-      allow delete: if true;
-    }
-
-    match /paymentMethods/{payId} {
-      allow read: if true;
-      allow create: if true;
-      allow update: if true;
-      allow delete: if true;
-    }
-
-    match /transactions/{trId} {
-      allow read: if true;
-      allow create: if true;
-      allow update: if true;
-      allow delete: if true;
-    }
-
-    match /inventory/{invId} {
-      allow read: if true;
-      allow create: if true;
-      allow update: if true;
-      allow delete: if true;
-    }
-
     match /users/{userId} {
-      allow read: if true;
-      allow create: if true;
-      allow update: if true;
-      allow delete: if true;
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated() && (request.auth.uid == userId || isSuperAdmin());
     }
 
-    match /businessSettings/{settingsId} {
-      allow read: if true;
-      allow create: if true;
-      allow update: if true;
-      allow delete: if true;
+    match /toko/{tokoId} {
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated(); // Allow creation & updates for now
+    }
+    
+    match /cabang/{cabId} {
+      allow read, write: if isAuthenticated();
+    }
+    
+    match /transaksi/{transId} {
+      allow read, write: if isAuthenticated();
     }
   }
 }

@@ -9,11 +9,12 @@ interface SidebarProps {
   role: UserRole;
   userName?: string | null;
   onLogout: () => void;
+  onStoreLogout?: () => void;
   businessName: string;
   businessLogo: string;
 }
 
-export default function Sidebar({ activeView, onViewChange, role, userName, onLogout, businessName, businessLogo }: SidebarProps) {
+export default function Sidebar({ activeView, onViewChange, role, userName, onLogout, onStoreLogout, businessName, businessLogo }: SidebarProps) {
   const allMenuItems = [
     { id: 'pos', icon: ShoppingCart, label: 'Kasir', roles: ['ADMIN', 'CASHIER'] },
     { id: 'dashboard', icon: LayoutDashboard, label: 'Analitik', roles: ['ADMIN', 'CASHIER'] },
@@ -87,10 +88,21 @@ export default function Sidebar({ activeView, onViewChange, role, userName, onLo
         <button 
           onClick={onLogout}
           className="w-full flex items-center gap-4 px-4 py-3 rounded-xl text-soft-red/60 hover:bg-soft-red/10 hover:text-soft-red transition-all group"
+          title="Keluar dari Profil Kasir"
         >
-          <LogOut className="w-6 h-6" />
-          <span className="font-medium">Keluar</span>
+          <LogOut className="w-6 h-6 group-hover:-translate-x-1 transition-transform" />
+          <span className="font-medium">Keluar Profil</span>
         </button>
+        {onStoreLogout && (
+          <button 
+            onClick={onStoreLogout}
+            className="w-full flex items-center gap-4 px-4 py-3 rounded-xl text-soft-cream/40 hover:bg-soft-cream/5 hover:text-soft-cream transition-all group border border-soft-cream/5"
+            title="Keluar dari Database Toko Aktif"
+          >
+            <Database className="w-6 h-6 group-hover:scale-110 transition-transform" />
+            <span className="font-medium">Ganti Toko</span>
+          </button>
+        )}
       </div>
     </div>
   );

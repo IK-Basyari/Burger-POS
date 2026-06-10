@@ -3,6 +3,9 @@ import { Plus, Minus, Trash2, Printer, Search, MoreVertical, ShoppingCart, Check
 import { motion, AnimatePresence } from 'motion/react';
 import { Capacitor } from '@capacitor/core';
 import { BluetoothThermalPrinter } from '../lib/bluetooth';
+
+declare const CapacitorBluetoothSerial: any;
+
 import { Category, MenuItem, CartItem, PaymentMethod, Transaction, StockItem, UserRole } from '../types';
 import { MENU_ITEMS } from '../constants';
 import { cn, formatRupiah } from '../lib/utils';
