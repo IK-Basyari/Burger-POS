@@ -1,35 +1,10 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // Default deny
+    // Development mode: Allow all read/write for the custom manual auth flow
+    // since Owner login doesn't use Firebase Auth, it must be able to query the DB directly.
     match /{document=**} {
-      allow read, write: if false;
-    }
-
-    function isSuperAdmin() {
-      return request.auth != null && request.auth.token.email == 'irvan.syar@gmail.com';
-    }
-
-    function isAuthenticated() {
-      return request.auth != null;
-    }
-
-    match /users/{userId} {
-      allow read: if isAuthenticated();
-      allow write: if isAuthenticated() && (request.auth.uid == userId || isSuperAdmin());
-    }
-
-    match /toko/{tokoId} {
-      allow read: if isAuthenticated();
-      allow write: if isAuthenticated(); // Allow creation & updates for now
-    }
-    
-    match /cabang/{cabId} {
-      allow read, write: if isAuthenticated();
-    }
-    
-    match /transaksi/{transId} {
-      allow read, write: if isAuthenticated();
+      allow read, write: if true;
     }
   }
 }

@@ -94,6 +94,15 @@ export const dbService = {
     }
   },
 
+  async updateUserPassword(uid: string, newPassword: string) {
+    try {
+      await updateDoc(doc(db, 'users', uid), { password: newPassword });
+    } catch (e) {
+      console.error('Failed to update password', e);
+      throw e;
+    }
+  },
+
   async addTransaksi(data: Omit<import('../schema').Transaksi, 'transaksi_id' | 'system_datetime'>) {
     try {
       const transDoc = doc(collection(db, 'transaksi'));

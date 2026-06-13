@@ -1,6 +1,6 @@
 import { auth, secondaryAuth } from './firebase';
 import { db } from './firebase';
-import { doc, getDoc, setDoc, serverTimestamp, collection, query, where, getDocs } from 'firebase/firestore';
+import { doc, getDoc, setDoc, deleteDoc, serverTimestamp, collection, query, where, getDocs } from 'firebase/firestore';
 import { signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut, GoogleAuthProvider, signInWithPopup, User } from 'firebase/auth';
 import { UserRole } from '../schema';
 
@@ -32,6 +32,17 @@ export const authService = {
 
     const docSnap = querySnapshot.docs[0];
     const userData = docSnap.data();
+
+    // Jika Super Admin mendaftarkan secara manual dgn Doc ID random, kita migrasikan document ini
+    // ke UID asli milik Google Auth.
+    if (docSnap.id !== userCred.user.uid) {
+       if (userData.toko_id) {
+           await setDoc(doc(db, 'toko', userData.toko_id), { owner_id: userCred.user.uid }, { merge: true });
+       }
+       userData.uid = userCred.user.uid;
+       await setDoc(doc(db, 'users', userCred.user.uid), userData);
+       await deleteDoc(doc(db, 'users', docSnap.id));
+    }
 
     // Periksa Role dari Database
     if (userData.role === 'super_admin') {
@@ -86,37 +97,177 @@ export const authService = {
     return { user: userCred.user, userData };
   },
 
-  async registerOwnerGoogle(uid: string, email: string, name: string, namaToko: string) {
+  async registerOwnerEmailPassword(email: string, password: string, name: string, namaToko: string, alamat: string, noHp: string) {
+    // Validate if email already exists
+    const usersRef = collection(db, 'users');
+    const q = query(usersRef, where('email', '==', email));
+    const querySnapshot = await getDocs(q);
+    if (!querySnapshot.empty) {
+      throw new Error("Email sudah terdaftar. Silakan gunakan email lain.");
+    }
+
+    const newUserRef = doc(collection(db, 'users'));
+    const uid = newUserRef.id;
+    
+    // generate activation key
+    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+    let activationKey = '';
+    let isUnique = false;
+
+    while (!isUnique) {
+      activationKey = 'POS-';
+      for (let i = 0; i < 4; i++) {
+          activationKey += chars.charAt(Math.floor(Math.random() * chars.length));
+      }
+      const tokenQuery = query(usersRef, where('activation_key', '==', activationKey));
+      const tokenSnap = await getDocs(tokenQuery);
+      if (tokenSnap.empty) {
+        isUnique = true;
+      }
+    }
+
     const tokoId = `toko_${Date.now()}`;
     
-    // Create toko document
     await setDoc(doc(db, 'toko', tokoId), {
       toko_id: tokoId,
       nama_toko: namaToko,
+      alamat: alamat,
+      no_hp: noHp,
       owner_id: uid,
       status: 'pending',
       created_at: Date.now()
     });
 
-    // Create owner user doc
     const newUserData = {
       uid: uid,
       email: email,
+      password: password, // Store plain text password as requested
       username: email.split('@')[0],
       name: name,
+      nama_toko: namaToko,
       role: 'owner' as UserRole,
-      toko_id: tokoId
+      toko_id: tokoId,
+      no_hp: noHp,
+      status: 'pending',
+      account_status: 'pending',
+      activation_key: activationKey,
+      token_status: 'belum_siap'
     };
     
-    await setDoc(doc(db, 'users', uid), newUserData);
+    await setDoc(newUserRef, newUserData);
     
     return { userData: newUserData };
   },
 
+  async loginPortalManual(email: string, password: string) {
+    const usersRef = collection(db, 'users');
+    // Manual query for email and password
+    const q = query(usersRef, where('email', '==', email), where('password', '==', password));
+    const querySnapshot = await getDocs(q);
+
+    if (querySnapshot.empty) {
+      throw new Error("Email atau password tidak cocok.");
+    }
+
+    const docSnap = querySnapshot.docs[0];
+    const userData = docSnap.data();
+
+    if (userData.role === 'super_admin' && userData.email === 'irvan.syar@gmail.com') {
+      // Allow super admin
+      localStorage.setItem('superAdminUid', userData.uid);
+    } else if (userData.role === 'owner') {
+      // Allow owner
+      localStorage.setItem('ownerUid', userData.uid);
+    } else if (userData.role === 'cashier' || userData.role === 'leader' || userData.role === 'kasir') {
+      throw new Error("Akun Staf/Kasir dilarang masuk portal ini. Silakan login melalui halaman POS-Login!");
+    } else {
+      throw new Error("Akses ditolak. Form ini khusus Owner & Super Admin.");
+    }
+
+    return { user: { uid: userData.uid, email: userData.email }, userData };
+  },
+
+  async activateOwnerAccount(uid: string, activationKeyInput: string) {
+    const userData = await this.getUserData(uid);
+    if (!userData) throw new Error("User tidak ditemukan.");
+
+    if (userData.activation_key !== activationKeyInput) {
+      throw new Error("Kode Aktivasi tidak valid untuk email ini.");
+    }
+
+    if (userData.token_status === 'belum_siap') {
+      throw new Error("Kode Aktivasi ini belum diaktifkan oleh Super Admin. Harap tunggu.");
+    }
+
+    if (userData.token_status === 'hangus') {
+      throw new Error("Kode Aktivasi ini sudah hangus karena telah digunakan.");
+    }
+
+    if (userData.token_status !== 'siap_pakai') {
+      throw new Error("Status Kode Aktivasi tidak valid.");
+    }
+
+    // Update user status
+    await setDoc(doc(db, 'users', uid), { status: 'active', account_status: 'active', token_status: 'hangus' }, { merge: true });
+    
+    // Update toko status
+    if (userData.toko_id) {
+       await setDoc(doc(db, 'toko', userData.toko_id), { status: 'active' }, { merge: true });
+    }
+
+    return true;
+  },
+
+  async registerTokoManual(email: string, password: string, name: string, namaToko: string, alamat: string) {
+    // Validate if email already exists
+    const usersRef = collection(db, 'users');
+    const q = query(usersRef, where('email', '==', email));
+    const querySnapshot = await getDocs(q);
+    if (!querySnapshot.empty) {
+      throw new Error("Email sudah terdaftar. Silakan gunakan email lain.");
+    }
+
+    const newUserRef = doc(collection(db, 'users'));
+    const uid = newUserRef.id;
+    
+    const tokoId = `toko_${Date.now()}`;
+    
+    await setDoc(doc(db, 'toko', tokoId), {
+      toko_id: tokoId,
+      nama_toko: namaToko,
+      alamat: alamat,
+      owner_id: uid,
+      status: 'active',
+      created_at: Date.now()
+    });
+
+    const newUserData = {
+      uid: uid,
+      email: email,
+      password: password,
+      username: email.split('@')[0],
+      name: name,
+      nama_toko: namaToko,
+      role: 'owner' as UserRole,
+      status: 'active',
+      toko_id: tokoId
+    };
+    
+    await setDoc(newUserRef, newUserData);
+    
+    return newUserData;
+  },
+
   async registerTokoByAdmin(email: string, password: string, name: string, namaToko: string) {
-    const userCred = await createUserWithEmailAndPassword(secondaryAuth, email, password);
-    const uid = userCred.user.uid;
-    await signOut(secondaryAuth);
+    const usersRef = collection(db, 'users');
+    const q = query(usersRef, where('email', '==', email));
+    const querySnapshot = await getDocs(q);
+    if (!querySnapshot.empty) {
+      throw new Error("Email sudah terdaftar. Silakan gunakan email lain.");
+    }
+
+    const newUserRef = doc(collection(db, 'users'));
+    const uid = newUserRef.id;
     
     const tokoId = `toko_${Date.now()}`;
     
@@ -131,13 +282,15 @@ export const authService = {
     const newUserData = {
       uid: uid,
       email: email,
+      password: password,
       username: email.split('@')[0],
       name: name,
+      nama_toko: namaToko,
       role: 'owner' as UserRole,
       toko_id: tokoId
     };
     
-    await setDoc(doc(db, 'users', uid), newUserData);
+    await setDoc(newUserRef, newUserData);
     
     return newUserData;
   },
